@@ -136,6 +136,47 @@ def detect_safety_car(incident_occurred: bool, rng: np.random.Generator, lap: in
     return None
 
 
+def detect_overtaken(
+    prev_cars: list[CarState], new_cars: list[CarState], player_pitted: bool, lap: int
+) -> Event | None:
+    if player_pitted:
+        return None
+    prev_player = next(c for c in prev_cars if c.id == 0)
+    new_player = next(c for c in new_cars if c.id == 0)
+    if new_player.retired_lap is not None:
+        return None
+    for prev_car, new_car in zip(prev_cars, new_cars):
+        if prev_car.id == 0 or new_car.retired_lap is not None:
+            continue
+        if prev_car.total_time > prev_player.total_time and new_car.total_time < new_player.total_time:
+            return Event(
+                type=EventType.OVERTAKEN,
+                lap=lap,
+                options=["push", "hold_position"],
+                context={"overtaken_by": new_car.id},
+            )
+    return None
+
+
+def detect_pitting_opportunity(
+    player: CarState, rivals: list[CarState], player_strategy: list[PitPlanEntry], lap: int
+) -> Event | None:
+    near_target = False
+    if player.pit_count == 0:
+        near_target = any(abs(entry.target_lap - lap) <= 1 for entry in player_strategy)
+    cliff_lap = PARAMS["tyre"][player.compound]["cliff_lap"]
+    past_cliff = player.tyre_age > cliff_lap
+    if not (near_target or past_cliff):
+        return None
+    rivals_pitted = [rival.id for rival in rivals if rival.pit_count > 0 and rival.retired_lap is None]
+    return Event(
+        type=EventType.PIT_OPPORTUNITY,
+        lap=lap,
+        options=["pit_soft", "pit_medium", "pit_hard", "stay_out"],
+        context={"rivals_pitted": rivals_pitted},
+    )
+
+
 def _apply_pit(car: CarState, compound: Compound, seed: int, lap_number: int) -> CarState:
     rng = make_rng(seed, lap_number, PURPOSE_PIT_LOSS, car.id)
     return dataclasses.replace(
@@ -200,14 +241,17 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
     cars = list(state.cars)
     total_laps = TRACKS[state.track]["laps"]
 
+    player_pitted = False
     if decision is not None:
         if decision.push is not None:
             push_active = decision.push
         if decision.choice in _PIT_CHOICES and cars and cars[0].retired_lap is None:
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
+            player_pitted = True
         elif decision.choice == "repair" and cars and cars[0].retired_lap is None:
             cars[0] = _apply_repair(cars[0], seed, lap_number)
+            player_pitted = True
 
     prev_wetness = weather_at(seed, state.track, state.lap)
     wetness = weather_at(seed, state.track, lap_number)
@@ -277,6 +321,15 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
             )
         new_cars.append(new_car)
         paired.append((new_car, entry))
+
+    overtaken_event = detect_overtaken(state.cars, new_cars, player_pitted, lap_number)
+    if overtaken_event is not None:
+        events.append(overtaken_event)
+
+    if new_cars and new_cars[0].retired_lap is None:
+        pitting_event = detect_pitting_opportunity(new_cars[0], new_cars[1:], state.player_strategy, lap_number)
+        if pitting_event is not None:
+            events.append(pitting_event)
 
     active_pairs = [pair for pair in paired if pair[0].retired_lap is None]
     retired_pairs = [pair for pair in paired if pair[0].retired_lap is not None]
