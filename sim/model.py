@@ -2,6 +2,7 @@ from typing import TypedDict
 
 import numpy as np
 
+from sim.rng import PURPOSE_WEATHER, make_rng
 from sim.types import Compound
 
 
@@ -14,6 +15,14 @@ class TyreParams(TypedDict):
 class WeatherParams(TypedDict):
     optimal_wetness: float
     penalty_coeff: float
+
+
+class WeatherTrajectoryParams(TypedDict):
+    rain_onset_chance: float
+    rain_clear_chance: float
+    ramp_rate: float
+    noise_std: float
+    rain_threshold: float
 
 
 class PitLossParams(TypedDict):
@@ -40,6 +49,7 @@ class ModelParams(TypedDict):
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
     weather: dict[Compound, WeatherParams]
+    weather_trajectory: WeatherTrajectoryParams
 
 
 PARAMS: ModelParams = {
@@ -69,6 +79,13 @@ PARAMS: ModelParams = {
         Compound.HARD: {"optimal_wetness": 0.0, "penalty_coeff": 22.0},
         Compound.INTER: {"optimal_wetness": 0.35, "penalty_coeff": 12.0},
         Compound.WET: {"optimal_wetness": 0.85, "penalty_coeff": 15.0},
+    },
+    "weather_trajectory": {
+        "rain_onset_chance": 0.015,
+        "rain_clear_chance": 0.08,
+        "ramp_rate": 0.25,
+        "noise_std": 0.02,
+        "rain_threshold": 0.15,
     },
 }
 
@@ -118,6 +135,27 @@ def pit_loss(rng: np.random.Generator) -> float:
         value = float(rng.normal(params["typical_mean"], params["typical_std"]))
         return float(np.clip(value, params["min"], params["max"]))
     return float(rng.uniform(params["min"], params["max"]))
+
+
+def weather_at(seed: int, track: str, lap: int) -> float:
+    params = PARAMS["weather_trajectory"]
+    wetness = 0.0
+    raining = False
+    # A race never starts already raining in v1 - the walk begins at lap 1,
+    # so weather_at(..., lap=0) is always exactly dry.
+    for lap_number in range(1, lap + 1):
+        rng = make_rng(seed, lap_number, PURPOSE_WEATHER)
+        if raining:
+            if rng.random() < params["rain_clear_chance"]:
+                raining = False
+        else:
+            if rng.random() < params["rain_onset_chance"]:
+                raining = True
+        target = 1.0 if raining else 0.0
+        wetness += (target - wetness) * params["ramp_rate"]
+        wetness += float(rng.normal(0.0, params["noise_std"]))
+        wetness = min(1.0, max(0.0, wetness))
+    return wetness
 
 
 def lap_time(

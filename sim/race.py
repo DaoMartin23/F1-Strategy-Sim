@@ -1,9 +1,9 @@
 import dataclasses
 from enum import Enum
 
-from sim.model import CAR_CHOICES, PARAMS, TRACKS, lap_time, pit_loss
+from sim.model import CAR_CHOICES, PARAMS, TRACKS, lap_time, pit_loss, weather_at
 from sim.rng import PURPOSE_GRID, PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
-from sim.types import CarLap, CarState, Compound, Decision, Event, LapTrace, PitPlanEntry, State
+from sim.types import CarLap, CarState, Compound, Decision, Event, EventType, LapTrace, PitPlanEntry, State
 
 _PIT_CHOICES: dict[str, Compound] = {
     "pit_soft": Compound.SOFT,
@@ -92,6 +92,30 @@ def is_finished(state: State) -> bool:
     return state.lap >= TRACKS[state.track]["laps"]
 
 
+def detect_rain_start(prev_wetness: float, wetness: float, lap: int) -> Event | None:
+    threshold = PARAMS["weather_trajectory"]["rain_threshold"]
+    if prev_wetness < threshold <= wetness:
+        return Event(
+            type=EventType.RAIN_START,
+            lap=lap,
+            options=["stay_out", "pit_inter", "pit_wet"],
+            context={"wetness": wetness},
+        )
+    return None
+
+
+def detect_rain_end(prev_wetness: float, wetness: float, lap: int) -> Event | None:
+    threshold = PARAMS["weather_trajectory"]["rain_threshold"]
+    if prev_wetness >= threshold > wetness:
+        return Event(
+            type=EventType.RAIN_END,
+            lap=lap,
+            options=["pit_soft", "pit_medium", "pit_hard", "stay_out"],
+            context={"wetness": wetness},
+        )
+    return None
+
+
 def _apply_pit(car: CarState, compound: Compound, seed: int, lap_number: int) -> CarState:
     rng = make_rng(seed, lap_number, PURPOSE_PIT_LOSS, car.id)
     return dataclasses.replace(
@@ -120,6 +144,16 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
         if decision.choice in _PIT_CHOICES and cars and cars[0].retired_lap is None:
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
+
+    prev_wetness = weather_at(seed, state.track, state.lap)
+    wetness = weather_at(seed, state.track, lap_number)
+    events: list[Event] = []
+    rain_start_event = detect_rain_start(prev_wetness, wetness, lap_number)
+    if rain_start_event is not None:
+        events.append(rain_start_event)
+    rain_end_event = detect_rain_end(prev_wetness, wetness, lap_number)
+    if rain_end_event is not None:
+        events.append(rain_end_event)
 
     grid = _compute_grid(state.starting_position, cars, seed)
     for idx, car in enumerate(cars):
@@ -153,7 +187,7 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
 
             noise_rng = make_rng(seed, lap_number, PURPOSE_NOISE, car.id)
             this_lap_time = lap_time(
-                car.car, state.track, lap_number, car.compound, new_tyre_age, 0.0, noise_rng, car.damage
+                car.car, state.track, lap_number, car.compound, new_tyre_age, wetness, noise_rng, car.damage
             )
             if pushing:
                 this_lap_time -= PARAMS["push_time_gain"]
@@ -185,5 +219,5 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
         push_active=push_active,
         pending_decision=None,
     )
-    trace = LapTrace(lap=lap_number, wetness=0.0, cars=lap_entries)
-    return new_state, trace, []
+    trace = LapTrace(lap=lap_number, wetness=wetness, cars=lap_entries)
+    return new_state, trace, events
