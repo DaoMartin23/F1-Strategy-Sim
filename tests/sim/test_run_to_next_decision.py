@@ -3,6 +3,7 @@ import dataclasses
 from sim.model import PARAMS, incident_chance, weather_at
 from sim.race import (
     EVENT_PRIORITY,
+    _alternative_choice,
     _pick_priority_event,
     is_finished,
     new_race,
@@ -10,7 +11,7 @@ from sim.race import (
     step,
 )
 from sim.rng import PURPOSE_DAMAGE_CHANCE, make_rng
-from sim.types import Compound, Decision, Event, EventType
+from sim.types import Compound, Decision, DecisionLogEntry, Event, EventType, State
 
 _TRACK = "silverstone"
 _SEARCH_LAPS = range(1, 10)
@@ -112,15 +113,35 @@ def test_player_dnf_free_runs_to_finish_in_one_call() -> None:
 # --- equivalence with manual lap-by-lap replay -----------------------------
 
 
-def _drive_manually(state: object, seed: int) -> object:
-    pending_decision = None
-    while not is_finished(state):  # type: ignore[arg-type]
+def _drive_manually(state: State, seed: int) -> State:
+    pending_decision: Event | None = None
+    while not is_finished(state):
         decision = _auto_decision(pending_decision)
-        state, _trace, events = step(state, decision, seed=seed)  # type: ignore[arg-type]
+
+        # Mirror run_to_next_decision's own delta/decision_log computation,
+        # since that logic lives there, not in step() itself.
+        alt_time = None
+        if decision is not None and decision.choice is not None and pending_decision is not None:
+            alternative = _alternative_choice(pending_decision, decision.choice)
+            alt_state, _alt_trace, _alt_events = step(state, Decision(choice=alternative), seed)
+            alt_time = alt_state.cars[0].total_time
+
+        resolved_event = pending_decision
+        state, _trace, events = step(state, decision, seed=seed)
+
+        if resolved_event is not None and alt_time is not None and decision is not None:
+            log_entry = DecisionLogEntry(
+                lap=resolved_event.lap,
+                event_type=resolved_event.type,
+                choice=decision.choice,  # type: ignore[arg-type]
+                delta_seconds=alt_time - state.cars[0].total_time,
+            )
+            state = dataclasses.replace(state, decision_log=state.decision_log + [log_entry])
+
         pending_decision = None
-        if state.cars[0].retired_lap is None and events:  # type: ignore[attr-defined]
+        if state.cars[0].retired_lap is None and events:
             pending_decision = _pick_priority_event(events)
-            state = dataclasses.replace(state, pending_decision=pending_decision)  # type: ignore[arg-type]
+            state = dataclasses.replace(state, pending_decision=pending_decision)
     return state
 
 

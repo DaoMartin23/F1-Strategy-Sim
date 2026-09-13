@@ -101,7 +101,26 @@ def test_step_push_reduces_lap_time_and_increases_wear() -> None:
     assert push_trace.cars[0].lap_time < normal_trace.cars[0].lap_time
     assert pushed.cars[0].tyre_age > normal.cars[0].tyre_age
     assert pushed.push_active is True
-    assert normal.push_active is False
+
+
+def test_step_choice_push_activates_push_active() -> None:
+    # Answering an OVERTAKEN event with choice="push" (its literal option
+    # string) must actually engage push, not just set an unused string.
+    state = _state([_car(0, tyre_age=5)])
+    new_state, _trace, _events = step(state, Decision(choice="push"), seed=state.seed)
+    assert new_state.push_active is True
+
+
+def test_step_choice_hold_position_deactivates_push() -> None:
+    state = dataclasses.replace(_state([_car(0, tyre_age=5)]), push_active=True)
+    new_state, _trace, _events = step(state, Decision(choice="hold_position"), seed=state.seed)
+    assert new_state.push_active is False
+
+
+def test_step_choice_push_overrides_explicit_push_field() -> None:
+    state = _state([_car(0, tyre_age=5)])
+    new_state, _trace, _events = step(state, Decision(choice="push", push=False), seed=state.seed)
+    assert new_state.push_active is True
 
 
 def test_step_ranks_car_lap_positions_by_total_time() -> None:

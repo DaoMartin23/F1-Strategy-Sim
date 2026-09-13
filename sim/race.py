@@ -12,7 +12,18 @@ from sim.rng import (
     PURPOSE_SAFETY_CAR_TRIGGER,
     make_rng,
 )
-from sim.types import CarLap, CarState, Compound, Decision, Event, EventType, LapTrace, PitPlanEntry, State
+from sim.types import (
+    CarLap,
+    CarState,
+    Compound,
+    Decision,
+    DecisionLogEntry,
+    Event,
+    EventType,
+    LapTrace,
+    PitPlanEntry,
+    State,
+)
 
 _PIT_CHOICES: dict[str, Compound] = {
     "pit_soft": Compound.SOFT,
@@ -245,6 +256,10 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
     if decision is not None:
         if decision.push is not None:
             push_active = decision.push
+        if decision.choice == "push":
+            push_active = True
+        elif decision.choice == "hold_position":
+            push_active = False
         if decision.choice in _PIT_CHOICES and cars and cars[0].retired_lap is None:
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
@@ -389,15 +404,56 @@ def _pick_priority_event(events: list[Event]) -> Event:
     return events[0]
 
 
+_NO_ACTION_CHOICES = {"stay_out", "hold_position"}
+
+
+def _alternative_choice(event: Event, chosen: str) -> str:
+    if chosen in _NO_ACTION_CHOICES:
+        for option in event.options:
+            if option not in _NO_ACTION_CHOICES:
+                return option
+        return chosen
+    for option in event.options:
+        if option in _NO_ACTION_CHOICES:
+            return option
+    return chosen
+
+
 def run_to_next_decision(
     state: State, decision: Decision | None, seed: int
 ) -> tuple[State, list[LapTrace], Event | None]:
     laps: list[LapTrace] = []
     current_decision = decision
+    pending_log_alt_time: float | None = None
+    pending_log_event: Event | None = None
+    pending_log_choice: str | None = None
+
+    if decision is not None and decision.choice is not None and state.pending_decision is not None:
+        event = state.pending_decision
+        alternative = _alternative_choice(event, decision.choice)
+        alt_state, _alt_trace, _alt_events = step(state, Decision(choice=alternative), seed)
+        pending_log_alt_time = alt_state.cars[0].total_time
+        pending_log_event = event
+        pending_log_choice = decision.choice
+
     while not is_finished(state):
         state, trace, events = step(state, current_decision, seed)
         laps.append(trace)
         current_decision = None
+
+        if pending_log_event is not None and pending_log_alt_time is not None and pending_log_choice is not None:
+            chosen_time = state.cars[0].total_time
+            delta_seconds = pending_log_alt_time - chosen_time
+            log_entry = DecisionLogEntry(
+                lap=pending_log_event.lap,
+                event_type=pending_log_event.type,
+                choice=pending_log_choice,
+                delta_seconds=delta_seconds,
+            )
+            state = dataclasses.replace(state, decision_log=state.decision_log + [log_entry])
+            pending_log_event = None
+            pending_log_alt_time = None
+            pending_log_choice = None
 
         if state.cars[0].retired_lap is not None:
             # Nothing left for the player to decide - free-run to the finish.
