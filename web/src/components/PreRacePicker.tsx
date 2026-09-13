@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { createRace } from "../api/client";
 import type { State } from "../api/types";
-import { CAR_CHOICES, TRACKS } from "../carChoices";
+import { CAR_CHOICES, TRACKS } from "../simConstants";
 
 interface Props {
   onRaceCreated: (state: State) => void;

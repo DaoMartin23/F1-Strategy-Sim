@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { stepRace } from "../api/client";
 import type { Decision, LapTrace, State } from "../api/types";
-import { TOTAL_LAPS } from "../carChoices";
+import { TOTAL_LAPS } from "../simConstants";
 import { DecisionModal } from "./DecisionModal";
+import { GapBoard } from "./GapBoard";
 import { TrackMap } from "./TrackMap";
+import { TyreIcon } from "./TyreIcon";
+import { WeatherBadge } from "./WeatherBadge";
 
 interface Props {
   state: State;
@@ -64,6 +67,15 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
   const [displayedLap, setDisplayedLap] = useState<LapTrace | null>(null);
   const [animationProgress, setAnimationProgress] = useState(0);
   const [animatingRetiredIds, setAnimatingRetiredIds] = useState<Set<number>>(new Set());
+  // The chrome (gap board, tyre icon, weather badge) intentionally updates
+  // immediately alongside `state` rather than staying in lockstep with the
+  // map's animation - only the map's car positions visually journey through
+  // the intermediate laps. Wetness specifically isn't part of State at all
+  // (never persisted, per the sim's "derive, don't store" design), so the
+  // only way to know current weather client-side is to remember it from the
+  // last lap of the most recent /race/step response - reset to "unknown
+  // dry" on a fresh page load until the next action reports it for real.
+  const [lastKnownWetness, setLastKnownWetness] = useState(0);
 
   async function advance(decision: Decision | null) {
     setError(null);
@@ -75,6 +87,9 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
       // the true state, never a partially-animated one.
       onStateChange(result.state);
       setAnimatingRetiredIds(retiredIdSet(result.state.cars));
+      if (result.laps.length > 0) {
+        setLastKnownWetness(result.laps[result.laps.length - 1].wetness);
+      }
       await playLapQueue(result.laps, (lap, progress) => {
         setDisplayedLap(lap);
         setAnimationProgress(progress);
@@ -101,13 +116,19 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
     <main>
       <h1>F1 Race Strategy Game</h1>
 
+      <p>
+        Lap {mapLap} / {TOTAL_LAPS} — <WeatherBadge wetness={lastKnownWetness} />
+      </p>
+
       <TrackMap cars={mapCars} lap={mapLap} retiredIds={mapRetiredIds} animationProgress={mapAnimationProgress} />
 
       <p>
-        Lap {mapLap} / {TOTAL_LAPS} — {player.car} — tyres: {player.compound} (age {player.tyre_age}) — pit stops:{" "}
+        <TyreIcon compound={player.compound} tyreAge={player.tyre_age} /> {player.car} — pit stops:{" "}
         {player.pit_count} — damage: {player.damage}
         {player.retired_lap !== null && " — DNF"}
       </p>
+
+      <GapBoard cars={state.cars} />
 
       {finished && !animating && <p>Race finished.</p>}
 
