@@ -1,15 +1,23 @@
 // A stylized, hand-tuned closed track shape - NOT a licensed/precise trace
 // of Silverstone's real geometry (confirmed with the user as an acceptable
-// approximation). Built as a parametric polar curve r(theta) around a fixed
-// center: since every angle maps to exactly one point, the resulting closed
-// curve is guaranteed to never self-intersect, which hand-placed bezier
-// waypoints turned out not to be (see git history / commit message for the
-// self-intersecting first attempts this replaced).
+// approximation). Built from a small set of hand-placed vertices at
+// strictly ascending angles around a fixed center, connected by exactly
+// straight edges (via the standard point-normal line formula expressed in
+// polar form), with each corner rounded off by blending the two adjacent
+// straight-edge formulas over a small angular window. Because every vertex
+// angle is strictly ascending by construction, the result is guaranteed
+// star-shaped/non-self-intersecting - the same guarantee the original
+// sine-sum curve relied on, just built from straight edges instead of
+// smooth waves so it actually reads as straights + corners rather than a
+// wobbly blob (an earlier, freehand-Cartesian-vertex version of this same
+// approach briefly reintroduced self-intersection risk: hand-placing
+// vertices by eye doesn't guarantee their angle-from-center comes out
+// ascending, which a chicane-like detour violated - fixed by defining
+// vertices directly as (angle, radius) pairs instead).
 //
-// The shape carries a long diagonal "straight" on one side and a pinched,
-// hairpin-like dip on the other, evoking Silverstone's real silhouette (a
-// long Hangar-Straight-like edge, a tighter infield section) without
-// tracing its actual corner-by-corner layout.
+// One long back straight opposite a tighter, more technical infield corner
+// sequence evokes Silverstone's real silhouette without tracing its actual
+// corner-by-corner layout.
 
 import type { CarState } from "./api/types";
 
@@ -21,28 +29,108 @@ interface Point {
 }
 
 const CENTER: Point = { x: 500, y: 480 };
-const BASE_RADIUS = 230;
-const ASPECT_X = 1.5;
-const ASPECT_Y = 1.0;
-const SAMPLE_COUNT = 240;
+const SAMPLE_COUNT = 300;
 
-function angularDelta(theta: number, center: number): number {
-  return ((theta - center + Math.PI) % (2 * Math.PI)) - Math.PI;
+// (angle in degrees, radius) pairs, strictly ascending angle. Every
+// consecutive pair becomes an exactly straight edge; a long gap between two
+// vertices' angles reads as a long straight (e.g. 5->6, the back straight),
+// while several close-together vertices with tight radii read as a
+// technical corner sequence (2/3/4, the infield hairpin).
+const VERTEX_POLAR: [angleDeg: number, radius: number][] = [
+  [0, 290], // 0: start/finish
+  [35, 310], // 1: end of the pit straight, into turn 1's braking zone
+  [72, 175], // 2: tightening right-hander
+  [108, 130], // 3: tight hairpin-like bottom of the infield
+  [145, 220], // 4: opening back up
+  [183, 350], // 5: start of the long back straight (far side)
+  [232, 385], // 6: end of the long back straight
+  [266, 235], // 7: fast sweeping corner complex begins
+  [298, 185], // 8: esses continue, tightening
+  [333, 245], // 9: final corner back onto the pit straight
+];
+
+// Corner-rounding half-width in radians, index-aligned with VERTEX_POLAR -
+// wider blends read as sweeping/gentle corners, narrower ones as
+// tighter/sharper turns. Tuned per-vertex alongside the radii above (via
+// visual iteration - see the redesign's commit message) rather than one
+// constant, since a wide blend on a very sharp turn (e.g. vertex 6, an ~86
+// degree direction change) visually pinches the road to a point.
+const CORNER_BLEND: number[] = [0.12, 0.07, 0.07, 0.05, 0.08, 0.09, 0.05, 0.1, 0.08, 0.12];
+
+const VERTICES: Point[] = VERTEX_POLAR.map(([angleDeg, r]) => {
+  const theta = (angleDeg * Math.PI) / 180;
+  return { x: CENTER.x + r * Math.cos(theta), y: CENTER.y + r * Math.sin(theta) };
+});
+
+const VERTEX_ANGLES: number[] = VERTICES.map((v) => Math.atan2(v.y - CENTER.y, v.x - CENTER.x));
+
+interface LineParams {
+  /** Unit normal (nx, ny) and perpendicular distance d from CENTER, satisfying nx*x + ny*y = d for every point (x, y) on the line, oriented so d >= 0. */
+  nx: number;
+  ny: number;
+  d: number;
 }
 
-function gaussianBump(theta: number, center: number, width: number, amplitude: number): number {
-  const d = angularDelta(theta, center);
-  return amplitude * Math.exp(-((d / width) ** 2));
+// The straight line through two vertices, expressed relative to CENTER so
+// that r(theta) = d / (nx*cos(theta) + ny*sin(theta)) reconstructs it.
+function lineThrough(a: Point, b: Point): LineParams {
+  const ax = a.x - CENTER.x;
+  const ay = a.y - CENTER.y;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  let nx = -dy / length;
+  let ny = dx / length;
+  let d = nx * ax + ny * ay;
+  if (d < 0) {
+    nx = -nx;
+    ny = -ny;
+    d = -d;
+  }
+  return { nx, ny, d };
+}
+
+const SEGMENTS: LineParams[] = VERTICES.map((v, i) => lineThrough(v, VERTICES[(i + 1) % VERTICES.length]));
+
+function segmentRadius(seg: LineParams, theta: number): number {
+  return seg.d / (seg.nx * Math.cos(theta) + seg.ny * Math.sin(theta));
+}
+
+// Wraps b - a into (-pi, pi].
+function angleDiff(a: number, b: number): number {
+  return ((b - a + Math.PI) % (2 * Math.PI)) - Math.PI;
 }
 
 function radiusAt(theta: number): number {
-  let r = BASE_RADIUS;
-  r += 55 * Math.cos(theta - 0.85); // bulge toward the long-straight side
-  r -= 60 * Math.cos(2 * (theta - 0.85)); // flatten that bulge into a straighter edge
-  r += 20 * Math.sin(4 * theta + 0.6) * (0.5 + 0.5 * Math.cos(theta - 2.6)); // localized esses waviness
-  r -= gaussianBump(theta, 2.65, 0.35, 70); // pinched hairpin-like dip
-  r += gaussianBump(theta, 0.15, 0.3, 25); // small kick-out near start/finish
-  return r;
+  const wrapped = ((theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const n = VERTICES.length;
+  for (let i = 0; i < n; i++) {
+    const a0 = VERTEX_ANGLES[i];
+    const a1 = VERTEX_ANGLES[(i + 1) % n];
+    const span = ((angleDiff(a0, a1) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
+    const pos = ((angleDiff(a0, wrapped) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    if (pos > span) {
+      continue;
+    }
+
+    let r = segmentRadius(SEGMENTS[i], wrapped);
+    const distFromStart = pos;
+    const distFromEnd = span - pos;
+    const blendStart = CORNER_BLEND[i];
+    const blendEnd = CORNER_BLEND[(i + 1) % n];
+
+    if (distFromStart < blendStart) {
+      const rPrev = segmentRadius(SEGMENTS[(i - 1 + n) % n], wrapped);
+      const t = 0.5 - 0.5 * Math.cos(Math.PI * (distFromStart / blendStart));
+      r = rPrev * (1 - t) + r * t;
+    } else if (distFromEnd < blendEnd) {
+      const rNext = segmentRadius(SEGMENTS[(i + 1) % n], wrapped);
+      const t = 0.5 - 0.5 * Math.cos(Math.PI * (distFromEnd / blendEnd));
+      r = r * t + rNext * (1 - t);
+    }
+    return r;
+  }
+  throw new Error(`radiusAt: theta ${theta} not covered by any track segment`);
 }
 
 function samplePoints(): Point[] {
@@ -51,8 +139,8 @@ function samplePoints(): Point[] {
     const theta = (2 * Math.PI * i) / SAMPLE_COUNT;
     const r = radiusAt(theta);
     points.push({
-      x: CENTER.x + r * ASPECT_X * Math.cos(theta),
-      y: CENTER.y + r * ASPECT_Y * Math.sin(theta),
+      x: CENTER.x + r * Math.cos(theta),
+      y: CENTER.y + r * Math.sin(theta),
     });
   }
   return points;
