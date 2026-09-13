@@ -96,7 +96,7 @@ def _simulate_candidate(
 
 
 def find_optimal(
-    track: str, seed: int, player_car: str, starting_position: int, n_samples: int = 200
+    track: str, seed: int, player_car: str, starting_position: int, n_samples: int = 500
 ) -> OptimalResult:
     total_laps = TRACKS[track]["laps"]
     best: OptimalResult | None = None
