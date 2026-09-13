@@ -1,8 +1,8 @@
 import dataclasses
 from enum import Enum
 
-from sim.model import CAR_CHOICES, PARAMS, TRACKS, lap_time, pit_loss, weather_at
-from sim.rng import PURPOSE_GRID, PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
+from sim.model import CAR_CHOICES, PARAMS, TRACKS, incident_chance, lap_time, pit_loss, weather_at
+from sim.rng import PURPOSE_DAMAGE_CHANCE, PURPOSE_GRID, PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
 from sim.types import CarLap, CarState, Compound, Decision, Event, EventType, LapTrace, PitPlanEntry, State
 
 _PIT_CHOICES: dict[str, Compound] = {
@@ -127,6 +127,46 @@ def _apply_pit(car: CarState, compound: Compound, seed: int, lap_number: int) ->
     )
 
 
+def _apply_repair(car: CarState, seed: int, lap_number: int) -> CarState:
+    rng = make_rng(seed, lap_number, PURPOSE_PIT_LOSS, car.id)
+    extra = PARAMS["incident"]["repair_extra_time"]
+    return dataclasses.replace(
+        car,
+        tyre_age=0,
+        damage=0,
+        pit_count=car.pit_count + 1,
+        total_time=car.total_time + pit_loss(rng) + extra,
+    )
+
+
+def _roll_incidents(
+    cars: list[CarState], wetness: float, push_active: bool, seed: int, lap_number: int
+) -> tuple[list[CarState], Event | None]:
+    updated: list[CarState] = []
+    player_damage_event: Event | None = None
+    for car in cars:
+        if car.retired_lap is not None:
+            updated.append(car)
+            continue
+        pushing = push_active and car.id == 0
+        rng = make_rng(seed, lap_number, PURPOSE_DAMAGE_CHANCE, car.id)
+        chance = incident_chance(car.compound, wetness, pushing)
+        if rng.random() < chance:
+            if rng.random() < PARAMS["incident"]["dnf_given_incident_probability"]:
+                car = dataclasses.replace(car, retired_lap=lap_number)
+            else:
+                car = dataclasses.replace(car, damage=min(2, car.damage + 1))
+                if car.id == 0:
+                    player_damage_event = Event(
+                        type=EventType.DAMAGE,
+                        lap=lap_number,
+                        options=["repair", "stay_out"],
+                        context={"damage": car.damage},
+                    )
+        updated.append(car)
+    return updated, player_damage_event
+
+
 def _retired_lap_or_raise(car: CarState) -> int:
     assert car.retired_lap is not None
     return car.retired_lap
@@ -144,6 +184,8 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
         if decision.choice in _PIT_CHOICES and cars and cars[0].retired_lap is None:
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
+        elif decision.choice == "repair" and cars and cars[0].retired_lap is None:
+            cars[0] = _apply_repair(cars[0], seed, lap_number)
 
     prev_wetness = weather_at(seed, state.track, state.lap)
     wetness = weather_at(seed, state.track, lap_number)
@@ -166,6 +208,10 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
             if plan_entry.target_lap == lap_number:
                 cars[idx] = _apply_pit(cars[idx], plan_entry.compound, seed, lap_number)
                 break
+
+    cars, player_damage_event = _roll_incidents(cars, wetness, push_active, seed, lap_number)
+    if player_damage_event is not None:
+        events.append(player_damage_event)
 
     new_cars: list[CarState] = []
     paired: list[tuple[CarState, CarLap]] = []

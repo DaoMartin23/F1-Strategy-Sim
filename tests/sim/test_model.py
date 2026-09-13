@@ -6,6 +6,7 @@ from sim.model import (
     PARAMS,
     TRACKS,
     fuel_effect,
+    incident_chance,
     lap_time,
     noise,
     pit_loss,
@@ -95,6 +96,24 @@ def test_lap_time_damage_penalty() -> None:
     damaged = lap_time(car, "silverstone", 10, Compound.MEDIUM, 5, 0.0, rng_damaged, damage=2)
     expected_penalty = 2 * PARAMS["damage_penalty_per_level"]
     assert damaged - undamaged == pytest.approx(expected_penalty)
+
+
+def test_incident_chance_matches_baseline_when_neutral() -> None:
+    chance = incident_chance(Compound.SOFT, wetness=0.0, pushing=False)
+    assert chance == pytest.approx(PARAMS["incident"]["base_chance_per_lap"])
+
+
+def test_incident_chance_increases_with_weather_mismatch() -> None:
+    neutral = incident_chance(Compound.SOFT, wetness=0.0, pushing=False)
+    mismatched = incident_chance(Compound.SOFT, wetness=1.0, pushing=False)
+    assert mismatched > neutral
+
+
+def test_incident_chance_increases_when_pushing() -> None:
+    not_pushing = incident_chance(Compound.MEDIUM, wetness=0.0, pushing=False)
+    pushing = incident_chance(Compound.MEDIUM, wetness=0.0, pushing=True)
+    assert pushing > not_pushing
+    assert pushing - not_pushing == pytest.approx(PARAMS["incident"]["push_bonus"])
 
 
 def test_lap_time_faster_with_less_fuel() -> None:

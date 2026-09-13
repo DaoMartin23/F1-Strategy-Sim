@@ -131,31 +131,45 @@ def test_full_race_same_seed_and_choices_is_bit_identical() -> None:
 
 
 def test_rivals_all_pit_at_least_once_over_a_full_race() -> None:
+    # Since Stage 6c, a rival can DNF before ever reaching its planned pit
+    # lap - a retirement is as valid an "excuse" for zero pit stops as never
+    # existing would be, so we only require pit_count >= 1 for rivals that
+    # actually finished the race.
     state = new_race("silverstone", seed=7, player_car="car_4", starting_position=12)
     while not is_finished(state):
         state, _trace, _events = step(state, None, seed=state.seed)
     for car in state.cars:
-        if car.id != 0:
+        if car.id != 0 and car.retired_lap is None:
             assert car.pit_count >= 1
 
 
 def test_rival_pits_on_its_planned_lap() -> None:
     state = new_race("silverstone", seed=7, player_car="car_4", starting_position=12)
-    rival = next(car for car in state.cars if car.id != 0)
     grid = _compute_grid(state.starting_position, state.cars, seed=state.seed)
-    pace_offset = CAR_CHOICES[rival.car]
-    template = _rival_template(pace_offset, grid[rival.id])
     total_laps = TRACKS["silverstone"]["laps"]
-    plan = rival_plan(rival.id, template, total_laps)
-    target_lap = plan[0].target_lap
 
-    while state.lap < target_lap:
-        state, _trace, _events = step(state, None, seed=state.seed)
+    # Pick the first rival whose plan we can actually observe - i.e. one
+    # that survives (no incident/DNF) up to its own planned pit lap.
+    for candidate in state.cars:
+        if candidate.id == 0:
+            continue
+        pace_offset = CAR_CHOICES[candidate.car]
+        template = _rival_template(pace_offset, grid[candidate.id])
+        plan = rival_plan(candidate.id, template, total_laps)
+        target_lap = plan[0].target_lap
 
-    updated_rival = next(car for car in state.cars if car.id == rival.id)
-    assert updated_rival.tyre_age == 1
-    assert updated_rival.pit_count == 1
-    assert updated_rival.compound == plan[0].compound
+        probe_state = state
+        while probe_state.lap < target_lap:
+            probe_state, _trace, _events = step(probe_state, None, seed=probe_state.seed)
+        probed_rival = next(car for car in probe_state.cars if car.id == candidate.id)
+        if probed_rival.retired_lap is None:
+            state = probe_state
+            assert probed_rival.tyre_age == 1
+            assert probed_rival.pit_count == 1
+            assert probed_rival.compound == plan[0].compound
+            return
+
+    raise AssertionError("expected at least one rival to survive to its planned pit lap")
 
 
 def test_new_race_assigns_a_default_player_strategy() -> None:

@@ -39,12 +39,21 @@ class TrackParams(TypedDict):
     base_lap_time: float
 
 
+class IncidentParams(TypedDict):
+    base_chance_per_lap: float
+    weather_mismatch_coeff: float
+    push_bonus: float
+    dnf_given_incident_probability: float
+    repair_extra_time: float
+
+
 class ModelParams(TypedDict):
     fuel_effect_total_seconds: float
     noise_std: float
     push_time_gain: float
     push_extra_wear: int
     damage_penalty_per_level: float
+    incident: IncidentParams
     grid_shuffle_std: float
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
@@ -59,6 +68,13 @@ PARAMS: ModelParams = {
     "push_extra_wear": 1,
     "damage_penalty_per_level": 0.4,
     "grid_shuffle_std": 0.6,
+    "incident": {
+        "base_chance_per_lap": 0.0015,
+        "weather_mismatch_coeff": 0.0006,
+        "push_bonus": 0.0025,
+        "dnf_given_incident_probability": 0.15,
+        "repair_extra_time": 8.0,
+    },
     "pit_loss": {
         "min": 18.0,
         "max": 30.0,
@@ -123,6 +139,14 @@ def tyre_deg(compound: Compound, age: int) -> float:
 def weather_penalty(compound: Compound, wetness: float) -> float:
     params = PARAMS["weather"][compound]
     return params["penalty_coeff"] * abs(wetness - params["optimal_wetness"])
+
+
+def incident_chance(compound: Compound, wetness: float, pushing: bool) -> float:
+    params = PARAMS["incident"]
+    risk = params["base_chance_per_lap"] + params["weather_mismatch_coeff"] * weather_penalty(compound, wetness)
+    if pushing:
+        risk += params["push_bonus"]
+    return risk
 
 
 def noise(rng: np.random.Generator) -> float:
