@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CarIcon } from "./CarIcon";
-import { computeTrackFractions, START_FINISH_POINT, TRACK_PATH_D, TRACK_VIEWBOX } from "../trackGeometry";
-import type { State } from "../api/types";
+import { computeAnimatedFractions, START_FINISH_POINT, TRACK_PATH_D, TRACK_VIEWBOX } from "../trackGeometry";
 
 const CAR_COUNT = 20;
 
@@ -20,8 +19,7 @@ interface CarPosition {
 
 // Samples a point on the path plus a point a little further along, to
 // derive a heading via atan2 - the standard technique for orienting an
-// icon that follows an SVG path. Reused as-is by Stage 20c once positions
-// are animated instead of a static snapshot.
+// icon that follows an SVG path.
 function positionAtFraction(path: SVGPathElement, totalLength: number, fraction: number): CarPosition {
   const wrapped = ((fraction % 1) + 1) % 1;
   const here = path.getPointAtLength(wrapped * totalLength);
@@ -32,10 +30,16 @@ function positionAtFraction(path: SVGPathElement, totalLength: number, fraction:
 }
 
 interface Props {
-  state: State;
+  /** Whichever cars' total_time should drive this frame's positions - either
+   * a resting State's cars, or one LapTrace entry's cars mid-animation. */
+  cars: { id: number; total_time: number }[];
+  lap: number;
+  retiredIds: ReadonlySet<number>;
+  /** 0 for a resting/static display; 0..1 while mid-tick-animation. */
+  animationProgress: number;
 }
 
-export function TrackMap({ state }: Props) {
+export function TrackMap({ cars, lap, retiredIds, animationProgress }: Props) {
   const pathRef = useRef<SVGPathElement>(null);
   // Refs shouldn't be read during render (React rule - the ref might not
   // reflect the committed DOM yet); stash the element and its measured
@@ -51,7 +55,7 @@ export function TrackMap({ state }: Props) {
     }
   }, []);
 
-  const fractions = computeTrackFractions(state.cars, state.lap);
+  const fractions = computeAnimatedFractions(cars, lap, retiredIds, animationProgress);
 
   return (
     <svg viewBox={TRACK_VIEWBOX} width="100%" role="img" aria-label="Track map">
@@ -61,12 +65,12 @@ export function TrackMap({ state }: Props) {
       <circle cx={START_FINISH_POINT.x} cy={START_FINISH_POINT.y} r={5} fill="#ffd400" />
       {totalLength !== null &&
         pathElement !== null &&
-        state.cars.map((car) => {
-          const entry = fractions.find((f) => f.id === car.id);
-          if (entry === undefined) {
+        cars.map((car) => {
+          const fraction = fractions.get(car.id);
+          if (fraction === undefined) {
             return null;
           }
-          const pos = positionAtFraction(pathElement, totalLength, entry.fraction);
+          const pos = positionAtFraction(pathElement, totalLength, fraction);
           return (
             <CarIcon
               key={car.id}
@@ -76,7 +80,7 @@ export function TrackMap({ state }: Props) {
               color={colorForCar(car.id)}
               highlight={car.id === 0}
               scale={1.4}
-              opacity={entry.retired ? 0.35 : 1}
+              opacity={retiredIds.has(car.id) ? 0.35 : 1}
             />
           );
         })}

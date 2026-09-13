@@ -99,24 +99,66 @@ export interface CarTrackFraction {
   retired: boolean;
 }
 
-// Converts each car's total_time gap to the race leader into a position
-// around the track loop. The leader is pinned at fraction 0 (there's no
-// real sub-lap progress data to place them more precisely - this is a
-// static snapshot, not yet knowing "how far into the current lap" anyone
-// is); every other car sits behind that by its gap, expressed as a
-// fraction of the estimated average lap time, wrapped mod 1 so a car a
+interface GapEntry {
+  id: number;
+  totalTime: number;
+  retired: boolean;
+}
+
+// Core gap -> track-fraction math, shared by the static (Stage 20b) and
+// animated (Stage 20c) call sites below. The leader is pinned at fraction 0
+// (there's no real sub-lap progress data to place them more precisely -
+// this represents one instant, not yet knowing "how far into the current
+// lap" anyone is); every other car sits behind that by its gap, expressed
+// as a fraction of the estimated average lap time, wrapped mod 1 so a car a
 // full lap or more down still renders at a sensible on-track position
 // (it'll coincidentally land near the leader again, which is exactly how
 // being lapped looks on a real track map).
-export function computeTrackFractions(cars: CarState[], lap: number): CarTrackFraction[] {
-  const active = cars.filter((car) => car.retired_lap === null);
-  const leaderTotalTime = active.length > 0 ? Math.min(...active.map((car) => car.total_time)) : 0;
+function computeGapFractions(entries: GapEntry[], lap: number): Map<number, number> {
+  const active = entries.filter((entry) => !entry.retired);
+  const leaderTotalTime = active.length > 0 ? Math.min(...active.map((entry) => entry.totalTime)) : 0;
   const avgLapTime = lap > 0 && leaderTotalTime > 0 ? leaderTotalTime / lap : FALLBACK_LAP_TIME_SECONDS;
 
-  return cars.map((car) => {
-    const gapSeconds = car.total_time - leaderTotalTime;
+  const result = new Map<number, number>();
+  for (const entry of entries) {
+    const gapSeconds = entry.totalTime - leaderTotalTime;
     const gapFraction = gapSeconds / avgLapTime;
-    const fraction = ((-gapFraction % 1) + 1) % 1;
-    return { id: car.id, fraction, retired: car.retired_lap !== null };
-  });
+    result.set(entry.id, ((-gapFraction % 1) + 1) % 1);
+  }
+  return result;
+}
+
+// Static snapshot from a full race State (Stage 20b - the "resting" display
+// between animations, and the very first render before any lap has been
+// animated through).
+export function computeTrackFractions(cars: CarState[], lap: number): CarTrackFraction[] {
+  const entries = cars.map((car) => ({ id: car.id, totalTime: car.total_time, retired: car.retired_lap !== null }));
+  const fractions = computeGapFractions(entries, lap);
+  return cars.map((car) => ({ id: car.id, fraction: fractions.get(car.id) ?? 0, retired: car.retired_lap !== null }));
+}
+
+// Per-tick animated positions (Stage 20c) from one LapTrace entry.
+// animationProgress runs 0..1 over the tick's fixed duration; adding it to
+// the same static fraction formula above is enough to make the leader
+// complete exactly one full loop over the tick while every other car
+// maintains its gap-based offset throughout - see the Stage 20c commit
+// message for the short derivation of why plain addition (mod 1) is
+// equivalent to re-deriving "(animationProgress - gapFraction) mod 1" from
+// scratch.
+export function computeAnimatedFractions(
+  carLaps: { id: number; total_time: number }[],
+  lap: number,
+  retiredIds: ReadonlySet<number>,
+  animationProgress: number,
+): Map<number, number> {
+  const entries = carLaps.map((car) => ({ id: car.id, totalTime: car.total_time, retired: retiredIds.has(car.id) }));
+  const staticFractions = computeGapFractions(entries, lap);
+  const result = new Map<number, number>();
+  // animationProgress is always in [0, 1] and staticFraction always in
+  // [0, 1), so their sum is always in [0, 2) - a plain modulo is enough,
+  // no negative-wraparound handling needed here.
+  for (const [id, staticFraction] of staticFractions) {
+    result.set(id, (animationProgress + staticFraction) % 1);
+  }
+  return result;
 }
