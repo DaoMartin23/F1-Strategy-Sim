@@ -11,6 +11,8 @@
 // long Hangar-Straight-like edge, a tighter infield section) without
 // tracing its actual corner-by-corner layout.
 
+import type { CarState } from "./api/types";
+
 export const TRACK_VIEWBOX = "0 0 1000 1000";
 
 interface Point {
@@ -84,3 +86,37 @@ export const TRACK_PATH_D = catmullRomToBezierPath(TRACK_POINTS);
 // theta=0 sample (before the start/finish kick-out bump) - a reasonable
 // start/finish marker position on the straighter edge.
 export const START_FINISH_POINT: Point = TRACK_POINTS[0];
+
+// Mirrors TRACKS["silverstone"]["base_lap_time"] in sim/model.py - used only
+// as a fallback before any lap has completed (state.lap === 0), when there's
+// no real average pace to estimate from yet.
+const FALLBACK_LAP_TIME_SECONDS = 91.5;
+
+export interface CarTrackFraction {
+  id: number;
+  /** 0..1 fraction of the way around the loop; the leader sits at 0. */
+  fraction: number;
+  retired: boolean;
+}
+
+// Converts each car's total_time gap to the race leader into a position
+// around the track loop. The leader is pinned at fraction 0 (there's no
+// real sub-lap progress data to place them more precisely - this is a
+// static snapshot, not yet knowing "how far into the current lap" anyone
+// is); every other car sits behind that by its gap, expressed as a
+// fraction of the estimated average lap time, wrapped mod 1 so a car a
+// full lap or more down still renders at a sensible on-track position
+// (it'll coincidentally land near the leader again, which is exactly how
+// being lapped looks on a real track map).
+export function computeTrackFractions(cars: CarState[], lap: number): CarTrackFraction[] {
+  const active = cars.filter((car) => car.retired_lap === null);
+  const leaderTotalTime = active.length > 0 ? Math.min(...active.map((car) => car.total_time)) : 0;
+  const avgLapTime = lap > 0 && leaderTotalTime > 0 ? leaderTotalTime / lap : FALLBACK_LAP_TIME_SECONDS;
+
+  return cars.map((car) => {
+    const gapSeconds = car.total_time - leaderTotalTime;
+    const gapFraction = gapSeconds / avgLapTime;
+    const fraction = ((-gapFraction % 1) + 1) % 1;
+    return { id: car.id, fraction, retired: car.retired_lap !== null };
+  });
+}

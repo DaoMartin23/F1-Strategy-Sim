@@ -6,6 +6,7 @@ interface Props {
   color: string;
   highlight?: boolean;
   scale?: number;
+  opacity?: number;
 }
 
 // A small stylized top-down "model car" - not a photorealistic or
@@ -13,9 +14,9 @@ interface Props {
 // a tapered body, a cockpit, front/rear wings, and four wheel marks. Drawn
 // in a local coordinate space with the nose at negative y, then translated
 // and rotated into place by the caller.
-export function CarIcon({ x, y, angle, color, highlight = false, scale = 1 }: Props) {
+export function CarIcon({ x, y, angle, color, highlight = false, scale = 1, opacity = 1 }: Props) {
   return (
-    <g transform={`translate(${x} ${y}) rotate(${angle}) scale(${scale})`}>
+    <g transform={`translate(${x} ${y}) rotate(${angle}) scale(${scale})`} opacity={opacity}>
       {highlight && (
         <rect x={-9} y={-15} width={18} height={28} rx={6} fill="none" stroke="#ffd400" strokeWidth={2.5} />
       )}

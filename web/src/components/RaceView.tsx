@@ -35,7 +35,7 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
     <main>
       <h1>F1 Race Strategy Game</h1>
 
-      <TrackMap />
+      <TrackMap state={state} />
 
       <p>
         Lap {state.lap} / {TOTAL_LAPS} — {player.car} — tyres: {player.compound} (age {player.tyre_age}) — pit
