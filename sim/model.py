@@ -83,8 +83,14 @@ PARAMS: ModelParams = {
         "repair_extra_time": 8.0,
     },
     "safety_car": {
-        "base_chance_per_lap": 0.01,
-        "incident_bonus": 0.25,
+        # Tuned so most races have 0-1 safety cars and few have 2+ (see
+        # tests/sim/test_safety_car.py's distribution test). The original
+        # incident_bonus=0.25 was large enough that a field-wide incident
+        # (which is common on any sustained-rain lap, since it fires if ANY
+        # of 20 cars has one) made that lap ~26% likely to trigger an SC,
+        # with no cooldown - producing chains of SCs during rain.
+        "base_chance_per_lap": 0.006,
+        "incident_bonus": 0.05,
         "lap_time_seconds": 120.0,
     },
     "pit_loss": {

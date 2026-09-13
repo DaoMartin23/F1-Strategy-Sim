@@ -66,3 +66,35 @@ def test_step_can_emit_safety_car_event_over_many_races() -> None:
         if found:
             break
     assert found
+
+
+def _safety_car_count_for_seed(seed: int) -> int:
+    track = "silverstone"
+    state = new_race(track, seed=seed, player_car="car_5", starting_position=10)
+    count = 0
+    while not is_finished(state):
+        state, _trace, events = step(state, None, seed=state.seed)
+        count += sum(1 for e in events if e.type is EventType.SAFETY_CAR)
+    return count
+
+
+def test_safety_car_count_distribution_is_mostly_zero_or_one() -> None:
+    # Regression test for a reported bug: with the original params
+    # (base_chance_per_lap=0.01, incident_bonus=0.25), sustained rain could
+    # produce many field-wide "some car had an incident" laps in a row, each
+    # independently rolling a ~26% SC chance with no cooldown - some races
+    # had as many as 9 safety cars. Assert the *shape* of the distribution
+    # (most races 0-1, only a small tail at 2+) rather than exact
+    # probabilities, matching how the rest of the incident/SC model is
+    # tested in this project.
+    n = 600
+    counts = [_safety_car_count_for_seed(seed) for seed in range(n)]
+
+    zero_or_one = sum(1 for c in counts if c <= 1) / n
+    two_or_more = sum(1 for c in counts if c >= 2) / n
+    mean_count = sum(counts) / n
+
+    assert zero_or_one >= 0.85, f"expected most races to have 0-1 safety cars, got {zero_or_one:.2%}"
+    assert two_or_more <= 0.15, f"expected only a small tail of races with 2+ safety cars, got {two_or_more:.2%}"
+    assert mean_count < 1.0, f"expected a sub-1 average safety car count, got {mean_count:.2f}"
+    assert max(counts) <= 5, f"no race should run away to a huge safety car count, got max {max(counts)}"
