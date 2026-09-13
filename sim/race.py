@@ -1,8 +1,17 @@
 import dataclasses
 from enum import Enum
 
-from sim.model import CAR_CHOICES, PARAMS, TRACKS, incident_chance, lap_time, pit_loss, weather_at
-from sim.rng import PURPOSE_DAMAGE_CHANCE, PURPOSE_GRID, PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
+import numpy as np
+
+from sim.model import CAR_CHOICES, PARAMS, TRACKS, incident_chance, lap_time, pit_loss, safety_car_chance, weather_at
+from sim.rng import (
+    PURPOSE_DAMAGE_CHANCE,
+    PURPOSE_GRID,
+    PURPOSE_NOISE,
+    PURPOSE_PIT_LOSS,
+    PURPOSE_SAFETY_CAR_TRIGGER,
+    make_rng,
+)
 from sim.types import CarLap, CarState, Compound, Decision, Event, EventType, LapTrace, PitPlanEntry, State
 
 _PIT_CHOICES: dict[str, Compound] = {
@@ -116,6 +125,17 @@ def detect_rain_end(prev_wetness: float, wetness: float, lap: int) -> Event | No
     return None
 
 
+def detect_safety_car(incident_occurred: bool, rng: np.random.Generator, lap: int) -> Event | None:
+    if rng.random() < safety_car_chance(incident_occurred):
+        return Event(
+            type=EventType.SAFETY_CAR,
+            lap=lap,
+            options=["pit_soft", "pit_medium", "pit_hard", "hold_position"],
+            context={},
+        )
+    return None
+
+
 def _apply_pit(car: CarState, compound: Compound, seed: int, lap_number: int) -> CarState:
     rng = make_rng(seed, lap_number, PURPOSE_PIT_LOSS, car.id)
     return dataclasses.replace(
@@ -141,8 +161,9 @@ def _apply_repair(car: CarState, seed: int, lap_number: int) -> CarState:
 
 def _roll_incidents(
     cars: list[CarState], wetness: float, push_active: bool, seed: int, lap_number: int
-) -> tuple[list[CarState], Event | None]:
+) -> tuple[list[CarState], bool, Event | None]:
     updated: list[CarState] = []
+    incident_occurred = False
     player_damage_event: Event | None = None
     for car in cars:
         if car.retired_lap is not None:
@@ -152,6 +173,7 @@ def _roll_incidents(
         rng = make_rng(seed, lap_number, PURPOSE_DAMAGE_CHANCE, car.id)
         chance = incident_chance(car.compound, wetness, pushing)
         if rng.random() < chance:
+            incident_occurred = True
             if rng.random() < PARAMS["incident"]["dnf_given_incident_probability"]:
                 car = dataclasses.replace(car, retired_lap=lap_number)
             else:
@@ -164,7 +186,7 @@ def _roll_incidents(
                         context={"damage": car.damage},
                     )
         updated.append(car)
-    return updated, player_damage_event
+    return updated, incident_occurred, player_damage_event
 
 
 def _retired_lap_or_raise(car: CarState) -> int:
@@ -209,9 +231,14 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
                 cars[idx] = _apply_pit(cars[idx], plan_entry.compound, seed, lap_number)
                 break
 
-    cars, player_damage_event = _roll_incidents(cars, wetness, push_active, seed, lap_number)
+    cars, incident_occurred, player_damage_event = _roll_incidents(cars, wetness, push_active, seed, lap_number)
     if player_damage_event is not None:
         events.append(player_damage_event)
+
+    safety_car_rng = make_rng(seed, lap_number, PURPOSE_SAFETY_CAR_TRIGGER)
+    safety_car_event = detect_safety_car(incident_occurred, safety_car_rng, lap_number)
+    if safety_car_event is not None:
+        events.append(safety_car_event)
 
     new_cars: list[CarState] = []
     paired: list[tuple[CarState, CarLap]] = []

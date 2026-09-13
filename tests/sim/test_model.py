@@ -10,6 +10,7 @@ from sim.model import (
     lap_time,
     noise,
     pit_loss,
+    safety_car_chance,
     tyre_deg,
     weather_penalty,
 )
@@ -114,6 +115,17 @@ def test_incident_chance_increases_when_pushing() -> None:
     pushing = incident_chance(Compound.MEDIUM, wetness=0.0, pushing=True)
     assert pushing > not_pushing
     assert pushing - not_pushing == pytest.approx(PARAMS["incident"]["push_bonus"])
+
+
+def test_safety_car_chance_matches_base_when_no_incident() -> None:
+    assert safety_car_chance(incident_occurred=False) == pytest.approx(PARAMS["safety_car"]["base_chance_per_lap"])
+
+
+def test_safety_car_chance_boosted_by_incident() -> None:
+    without = safety_car_chance(incident_occurred=False)
+    with_incident = safety_car_chance(incident_occurred=True)
+    assert with_incident > without
+    assert with_incident - without == pytest.approx(PARAMS["safety_car"]["incident_bonus"])
 
 
 def test_lap_time_faster_with_less_fuel() -> None:

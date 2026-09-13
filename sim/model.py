@@ -47,6 +47,11 @@ class IncidentParams(TypedDict):
     repair_extra_time: float
 
 
+class SafetyCarParams(TypedDict):
+    base_chance_per_lap: float
+    incident_bonus: float
+
+
 class ModelParams(TypedDict):
     fuel_effect_total_seconds: float
     noise_std: float
@@ -54,6 +59,7 @@ class ModelParams(TypedDict):
     push_extra_wear: int
     damage_penalty_per_level: float
     incident: IncidentParams
+    safety_car: SafetyCarParams
     grid_shuffle_std: float
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
@@ -74,6 +80,10 @@ PARAMS: ModelParams = {
         "push_bonus": 0.0025,
         "dnf_given_incident_probability": 0.15,
         "repair_extra_time": 8.0,
+    },
+    "safety_car": {
+        "base_chance_per_lap": 0.01,
+        "incident_bonus": 0.25,
     },
     "pit_loss": {
         "min": 18.0,
@@ -147,6 +157,11 @@ def incident_chance(compound: Compound, wetness: float, pushing: bool) -> float:
     if pushing:
         risk += params["push_bonus"]
     return risk
+
+
+def safety_car_chance(incident_occurred: bool) -> float:
+    params = PARAMS["safety_car"]
+    return params["base_chance_per_lap"] + (params["incident_bonus"] if incident_occurred else 0.0)
 
 
 def noise(rng: np.random.Generator) -> float:
