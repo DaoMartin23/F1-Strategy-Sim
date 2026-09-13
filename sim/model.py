@@ -33,6 +33,8 @@ class TrackParams(TypedDict):
 class ModelParams(TypedDict):
     fuel_effect_total_seconds: float
     noise_std: float
+    push_time_gain: float
+    push_extra_wear: int
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
     weather: dict[Compound, WeatherParams]
@@ -41,6 +43,8 @@ class ModelParams(TypedDict):
 PARAMS: ModelParams = {
     "fuel_effect_total_seconds": 1.8,
     "noise_std": 0.15,
+    "push_time_gain": 0.5,
+    "push_extra_wear": 1,
     "pit_loss": {
         "min": 18.0,
         "max": 30.0,
