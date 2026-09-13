@@ -2,7 +2,7 @@ import dataclasses
 from enum import Enum
 
 from sim.model import CAR_CHOICES, PARAMS, TRACKS, lap_time, pit_loss
-from sim.rng import PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
+from sim.rng import PURPOSE_GRID, PURPOSE_NOISE, PURPOSE_PIT_LOSS, make_rng
 from sim.types import CarLap, CarState, Compound, Decision, Event, LapTrace, PitPlanEntry, State
 
 _PIT_CHOICES: dict[str, Compound] = {
@@ -24,9 +24,13 @@ def _rival_car_choice(car_id: int) -> str:
     return keys[(car_id - 1) % len(keys)]
 
 
-def _compute_grid(starting_position: int, cars: list[CarState]) -> dict[int, int]:
+def _compute_grid(starting_position: int, cars: list[CarState], seed: int) -> dict[int, int]:
     rivals = [car for car in cars if car.id != 0]
-    ranked_rivals = sorted(rivals, key=lambda car: CAR_CHOICES[car.car])
+    grid_rng = make_rng(seed, 0, PURPOSE_GRID)
+    jittered_pace = {
+        car.id: CAR_CHOICES[car.car] + grid_rng.normal(0.0, PARAMS["grid_shuffle_std"]) for car in rivals
+    }
+    ranked_rivals = sorted(rivals, key=lambda car: jittered_pace[car.id])
     grid: dict[int, int] = {0: starting_position}
     rival_iter = iter(ranked_rivals)
     for slot in range(1, len(cars) + 1):
@@ -117,7 +121,7 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
 
-    grid = _compute_grid(state.starting_position, cars)
+    grid = _compute_grid(state.starting_position, cars, seed)
     for idx, car in enumerate(cars):
         if car.id == 0 or car.retired_lap is not None:
             continue

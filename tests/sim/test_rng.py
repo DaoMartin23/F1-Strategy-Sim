@@ -2,6 +2,7 @@ import numpy as np
 
 from sim.rng import (
     PURPOSE_DAMAGE_CHANCE,
+    PURPOSE_GRID,
     PURPOSE_NOISE,
     PURPOSE_OPTIMAL_SEARCH,
     PURPOSE_PIT_LOSS,
@@ -49,6 +50,7 @@ def test_purpose_constants_are_distinct() -> None:
         PURPOSE_DAMAGE_CHANCE,
         PURPOSE_SAFETY_CAR_TRIGGER,
         PURPOSE_OPTIMAL_SEARCH,
+        PURPOSE_GRID,
     ]
     assert len(set(purposes)) == len(purposes)
 

@@ -66,18 +66,40 @@ def test_rival_car_choice_is_deterministic_and_covers_table() -> None:
 
 def test_compute_grid_places_player_at_starting_position() -> None:
     state = new_race("silverstone", seed=1, player_car="car_5", starting_position=8)
-    grid = _compute_grid(state.starting_position, state.cars)
+    grid = _compute_grid(state.starting_position, state.cars, seed=1)
     assert grid[0] == 8
     assert set(grid.values()) == set(range(1, 21))
 
 
-def test_compute_grid_ranks_rivals_by_pace_around_player() -> None:
+def test_compute_grid_is_deterministic_for_same_seed() -> None:
     state = new_race("silverstone", seed=1, player_car="car_5", starting_position=10)
-    grid = _compute_grid(state.starting_position, state.cars)
+    grid1 = _compute_grid(state.starting_position, state.cars, seed=123)
+    grid2 = _compute_grid(state.starting_position, state.cars, seed=123)
+    assert grid1 == grid2
+
+
+def test_compute_grid_faster_cars_more_likely_but_not_guaranteed_higher() -> None:
+    state = new_race("silverstone", seed=1, player_car="car_5", starting_position=20)
     rivals = [car for car in state.cars if car.id != 0]
-    ranked_by_slot = sorted(rivals, key=lambda c: grid[c.id])
-    paces = [CAR_CHOICES[c.car] for c in ranked_by_slot]
-    assert paces == sorted(paces)
+    fastest = min(rivals, key=lambda c: CAR_CHOICES[c.car])
+    slowest = max(rivals, key=lambda c: CAR_CHOICES[c.car])
+    assert CAR_CHOICES[fastest.car] < CAR_CHOICES[slowest.car]
+
+    n = 300
+    fastest_slots = []
+    slowest_slots = []
+    slowest_ever_ahead = False
+    for seed in range(n):
+        grid = _compute_grid(state.starting_position, state.cars, seed=seed)
+        fastest_slots.append(grid[fastest.id])
+        slowest_slots.append(grid[slowest.id])
+        if grid[slowest.id] < grid[fastest.id]:
+            slowest_ever_ahead = True
+
+    # More likely to start ahead, on average...
+    assert sum(fastest_slots) / n < sum(slowest_slots) / n
+    # ...but never guaranteed - genuine randomness, not a strict pace sort.
+    assert slowest_ever_ahead
 
 
 def test_rival_template_assignment_is_deterministic() -> None:
@@ -120,7 +142,7 @@ def test_rivals_all_pit_at_least_once_over_a_full_race() -> None:
 def test_rival_pits_on_its_planned_lap() -> None:
     state = new_race("silverstone", seed=7, player_car="car_4", starting_position=12)
     rival = next(car for car in state.cars if car.id != 0)
-    grid = _compute_grid(state.starting_position, state.cars)
+    grid = _compute_grid(state.starting_position, state.cars, seed=state.seed)
     pace_offset = CAR_CHOICES[rival.car]
     template = _rival_template(pace_offset, grid[rival.id])
     total_laps = TRACKS["silverstone"]["laps"]

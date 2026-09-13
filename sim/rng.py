@@ -6,6 +6,7 @@ PURPOSE_WEATHER = 3
 PURPOSE_DAMAGE_CHANCE = 4
 PURPOSE_SAFETY_CAR_TRIGGER = 5
 PURPOSE_OPTIMAL_SEARCH = 6
+PURPOSE_GRID = 7
 
 
 def make_rng(seed: int, lap: int, purpose: int, *extra: int) -> np.random.Generator:

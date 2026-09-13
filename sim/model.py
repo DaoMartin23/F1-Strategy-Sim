@@ -36,6 +36,7 @@ class ModelParams(TypedDict):
     push_time_gain: float
     push_extra_wear: int
     damage_penalty_per_level: float
+    grid_shuffle_std: float
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
     weather: dict[Compound, WeatherParams]
@@ -47,6 +48,7 @@ PARAMS: ModelParams = {
     "push_time_gain": 0.5,
     "push_extra_wear": 1,
     "damage_penalty_per_level": 0.4,
+    "grid_shuffle_std": 0.6,
     "pit_loss": {
         "min": 18.0,
         "max": 30.0,
