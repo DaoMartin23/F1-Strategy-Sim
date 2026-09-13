@@ -5,17 +5,19 @@ from api.schemas import (
     DecisionModel,
     EventModel,
     LapTraceModel,
+    OptimalResultModel,
     StateModel,
     decision_from_model,
     state_from_model,
 )
 from sim.model import CAR_CHOICES, TRACKS
+from sim.optimal import find_optimal
 from sim.race import new_race, run_to_next_decision
 
 router = APIRouter(prefix="/race", tags=["race"])
 
 
-class NewRaceRequest(BaseModel):
+class RaceSetup(BaseModel):
     track: str
     seed: int
     car: str
@@ -34,6 +36,10 @@ class NewRaceRequest(BaseModel):
         if value not in CAR_CHOICES:
             raise ValueError(f"unknown car: {value}")
         return value
+
+
+class NewRaceRequest(RaceSetup):
+    pass
 
 
 @router.post("/new", response_model=StateModel)
@@ -63,3 +69,13 @@ def step_race(request: StepRequest) -> StepResponse:
         laps=[LapTraceModel.model_validate(lap, from_attributes=True) for lap in laps],
         event=EventModel.model_validate(event, from_attributes=True) if event is not None else None,
     )
+
+
+class OptimalRequest(RaceSetup):
+    pass
+
+
+@router.post("/optimal", response_model=OptimalResultModel)
+def optimal_race(request: OptimalRequest) -> OptimalResultModel:
+    result = find_optimal(request.track, request.seed, request.car, request.starting_position)
+    return OptimalResultModel.model_validate(result, from_attributes=True)

@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+from sim.optimal import PushPolicy
 from sim.types import (
     CarState,
     Compound,
@@ -73,6 +74,18 @@ class StateModel(BaseModel):
     decision_log: list[DecisionLogEntryModel]
     cars: list[CarStateModel]
     safety_car_ends_after_lap: int | None = None
+
+
+class CandidateStrategyModel(BaseModel):
+    stops: list[PitPlanEntryModel]
+    push_policy: PushPolicy
+    reactive_choices: dict[EventType, str]
+
+
+class OptimalResultModel(BaseModel):
+    total_time: float
+    strategy: CandidateStrategyModel
+    positions: list[int]
 
 
 def car_state_from_model(model: CarStateModel) -> CarState:
