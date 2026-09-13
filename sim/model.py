@@ -35,6 +35,7 @@ class ModelParams(TypedDict):
     noise_std: float
     push_time_gain: float
     push_extra_wear: int
+    damage_penalty_per_level: float
     pit_loss: PitLossParams
     tyre: dict[Compound, TyreParams]
     weather: dict[Compound, WeatherParams]
@@ -45,6 +46,7 @@ PARAMS: ModelParams = {
     "noise_std": 0.15,
     "push_time_gain": 0.5,
     "push_extra_wear": 1,
+    "damage_penalty_per_level": 0.4,
     "pit_loss": {
         "min": 18.0,
         "max": 30.0,
@@ -124,6 +126,7 @@ def lap_time(
     tyre_age: int,
     wetness: float,
     rng: np.random.Generator,
+    damage: int = 0,
 ) -> float:
     track_params = TRACKS[track]
     base = track_params["base_lap_time"] + CAR_CHOICES[car]
@@ -133,4 +136,5 @@ def lap_time(
         + tyre_deg(compound, tyre_age)
         + weather_penalty(compound, wetness)
         + noise(rng)
+        + PARAMS["damage_penalty_per_level"] * damage
     )

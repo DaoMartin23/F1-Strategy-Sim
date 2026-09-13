@@ -87,6 +87,16 @@ def test_lap_time_deterministic_given_rng_state() -> None:
     assert t1 == t2
 
 
+def test_lap_time_damage_penalty() -> None:
+    car = next(iter(CAR_CHOICES))
+    rng_undamaged = np.random.default_rng(11)
+    rng_damaged = np.random.default_rng(11)
+    undamaged = lap_time(car, "silverstone", 10, Compound.MEDIUM, 5, 0.0, rng_undamaged, damage=0)
+    damaged = lap_time(car, "silverstone", 10, Compound.MEDIUM, 5, 0.0, rng_damaged, damage=2)
+    expected_penalty = 2 * PARAMS["damage_penalty_per_level"]
+    assert damaged - undamaged == pytest.approx(expected_penalty)
+
+
 def test_lap_time_faster_with_less_fuel() -> None:
     car = next(iter(CAR_CHOICES))
     rng_a = np.random.default_rng(9)

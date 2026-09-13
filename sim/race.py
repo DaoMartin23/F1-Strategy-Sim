@@ -28,6 +28,11 @@ def _apply_pit(car: CarState, compound: Compound, seed: int, lap_number: int) ->
     )
 
 
+def _retired_lap_or_raise(car: CarState) -> int:
+    assert car.retired_lap is not None
+    return car.retired_lap
+
+
 def step(state: State, decision: Decision | None, seed: int) -> tuple[State, LapTrace, list[Event]]:
     lap_number = state.lap + 1
     push_active = state.push_active
@@ -36,27 +41,38 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
     if decision is not None:
         if decision.push is not None:
             push_active = decision.push
-        if decision.choice in _PIT_CHOICES and cars:
+        if decision.choice in _PIT_CHOICES and cars and cars[0].retired_lap is None:
             compound = _PIT_CHOICES[decision.choice]
             cars[0] = _apply_pit(cars[0], compound, seed, lap_number)
 
     new_cars: list[CarState] = []
-    lap_entries: list[CarLap] = []
+    paired: list[tuple[CarState, CarLap]] = []
     for car in cars:
-        pushing = push_active and car.id == 0
-        extra_wear = 1 + PARAMS["push_extra_wear"] if pushing else 1
-        new_tyre_age = car.tyre_age + extra_wear
+        if car.retired_lap is not None:
+            new_car = car
+            entry = CarLap(
+                id=car.id,
+                position=0,
+                total_time=car.total_time,
+                lap_time=0.0,
+                compound=car.compound,
+                tyre_age=car.tyre_age,
+            )
+        else:
+            pushing = push_active and car.id == 0
+            extra_wear = 1 + PARAMS["push_extra_wear"] if pushing else 1
+            new_tyre_age = car.tyre_age + extra_wear
 
-        noise_rng = make_rng(seed, lap_number, PURPOSE_NOISE, car.id)
-        this_lap_time = lap_time(car.car, state.track, lap_number, car.compound, new_tyre_age, 0.0, noise_rng)
-        if pushing:
-            this_lap_time -= PARAMS["push_time_gain"]
+            noise_rng = make_rng(seed, lap_number, PURPOSE_NOISE, car.id)
+            this_lap_time = lap_time(
+                car.car, state.track, lap_number, car.compound, new_tyre_age, 0.0, noise_rng, car.damage
+            )
+            if pushing:
+                this_lap_time -= PARAMS["push_time_gain"]
 
-        new_total_time = car.total_time + this_lap_time
-        new_car = dataclasses.replace(car, tyre_age=new_tyre_age, total_time=new_total_time)
-        new_cars.append(new_car)
-        lap_entries.append(
-            CarLap(
+            new_total_time = car.total_time + this_lap_time
+            new_car = dataclasses.replace(car, tyre_age=new_tyre_age, total_time=new_total_time)
+            entry = CarLap(
                 id=car.id,
                 position=0,
                 total_time=new_total_time,
@@ -64,11 +80,15 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
                 compound=new_car.compound,
                 tyre_age=new_car.tyre_age,
             )
-        )
+        new_cars.append(new_car)
+        paired.append((new_car, entry))
 
-    ranked = sorted(lap_entries, key=lambda entry: entry.total_time)
-    position_by_id = {entry.id: idx + 1 for idx, entry in enumerate(ranked)}
-    lap_entries = [dataclasses.replace(entry, position=position_by_id[entry.id]) for entry in lap_entries]
+    active_pairs = [pair for pair in paired if pair[0].retired_lap is None]
+    retired_pairs = [pair for pair in paired if pair[0].retired_lap is not None]
+    active_pairs.sort(key=lambda pair: pair[1].total_time)
+    retired_pairs.sort(key=lambda pair: -_retired_lap_or_raise(pair[0]))
+    ordered = active_pairs + retired_pairs
+    lap_entries = [dataclasses.replace(entry, position=idx + 1) for idx, (_car, entry) in enumerate(ordered)]
 
     new_state = dataclasses.replace(
         state,

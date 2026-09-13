@@ -28,6 +28,7 @@ class CarState:
     pit_count: int
     damage: int
     total_time: float
+    retired_lap: int | None = None
 
 
 @dataclass(frozen=True)

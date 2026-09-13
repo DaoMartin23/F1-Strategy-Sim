@@ -5,15 +5,23 @@ from sim.race import is_finished, step
 from sim.types import CarState, Compound, Decision, State
 
 
-def _car(car_id: int, car: str = "car_1", tyre_age: int = 5, total_time: float = 0.0) -> CarState:
+def _car(
+    car_id: int,
+    car: str = "car_1",
+    tyre_age: int = 5,
+    total_time: float = 0.0,
+    damage: int = 0,
+    retired_lap: int | None = None,
+) -> CarState:
     return CarState(
         id=car_id,
         car=car,
         compound=Compound.MEDIUM,
         tyre_age=tyre_age,
         pit_count=0,
-        damage=0,
+        damage=damage,
         total_time=total_time,
+        retired_lap=retired_lap,
     )
 
 
@@ -119,3 +127,35 @@ def test_full_race_completes_via_repeated_steps() -> None:
     while not is_finished(state):
         state, _trace, _events = step(state, None, seed=state.seed)
     assert state.lap == total_laps
+
+
+def test_step_freezes_retired_car() -> None:
+    state = _state([_car(0, tyre_age=10, total_time=500.0, retired_lap=5)])
+    new_state, trace, _events = step(state, None, seed=state.seed)
+    assert new_state.cars[0].total_time == 500.0
+    assert new_state.cars[0].tyre_age == 10
+    assert new_state.cars[0].retired_lap == 5
+    assert trace.cars[0].lap_time == 0.0
+    assert trace.cars[0].total_time == 500.0
+
+
+def test_step_damaged_car_is_slower_than_undamaged() -> None:
+    clean = _state([_car(0, damage=0)])
+    damaged = _state([_car(0, damage=2)])
+    _clean_state, clean_trace, _e1 = step(clean, None, seed=clean.seed)
+    _damaged_state, damaged_trace, _e2 = step(damaged, None, seed=damaged.seed)
+    assert damaged_trace.cars[0].lap_time > clean_trace.cars[0].lap_time
+
+
+def test_step_ranks_retirees_behind_active_cars_by_retired_lap() -> None:
+    state = _state(
+        [
+            _car(0, total_time=1000.0),  # active, slow total_time
+            _car(1, total_time=10.0),  # active, fast total_time
+            _car(2, retired_lap=10),  # retired earlier
+            _car(3, retired_lap=30),  # retired later - should rank ahead of car 2
+        ]
+    )
+    _new_state, trace, _events = step(state, None, seed=state.seed)
+    by_id = {c.id: c.position for c in trace.cars}
+    assert by_id[1] < by_id[0] < by_id[3] < by_id[2]

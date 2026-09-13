@@ -35,6 +35,16 @@ def test_car_state_fields() -> None:
     assert car.compound is Compound.MEDIUM
 
 
+def test_car_state_retired_lap_defaults_to_none() -> None:
+    car = _sample_car(0)
+    assert car.retired_lap is None
+
+
+def test_car_state_can_be_marked_retired() -> None:
+    car = dataclasses.replace(_sample_car(0), retired_lap=23)
+    assert car.retired_lap == 23
+
+
 def test_dataclasses_are_frozen() -> None:
     car = _sample_car(0)
     with pytest.raises(dataclasses.FrozenInstanceError):
