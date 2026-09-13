@@ -15,3 +15,6 @@ export const CAR_CHOICES = [
 
 // v1 ships one track.
 export const TRACKS = ["silverstone"] as const;
+
+// Mirrors TRACKS["silverstone"]["laps"] in sim/model.py.
+export const TOTAL_LAPS = 52;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PreRacePicker } from "./components/PreRacePicker";
+import { RaceView } from "./components/RaceView";
 import { clearRaceState, loadRaceState, saveRaceState } from "./storage";
 import type { State } from "./api/types";
 
@@ -8,7 +9,7 @@ function App() {
   // directly as the initial state - no effect/loading-state dance needed.
   const [raceState, setRaceState] = useState<State | null>(loadRaceState);
 
-  function handleRaceCreated(state: State) {
+  function handleStateChange(state: State) {
     saveRaceState(state);
     setRaceState(state);
   }
@@ -19,21 +20,10 @@ function App() {
   }
 
   if (raceState === null) {
-    return <PreRacePicker onRaceCreated={handleRaceCreated} />;
+    return <PreRacePicker onRaceCreated={handleStateChange} />;
   }
 
-  return (
-    <main>
-      <h1>F1 Race Strategy Game</h1>
-      <p>
-        Race in progress — {raceState.track}, car {raceState.cars[0].car}, starting P
-        {raceState.starting_position}, lap {raceState.lap}
-      </p>
-      <button type="button" onClick={handleNewRace}>
-        New Race
-      </button>
-    </main>
-  );
+  return <RaceView state={raceState} onStateChange={handleStateChange} onNewRace={handleNewRace} />;
 }
 
 export default App;
