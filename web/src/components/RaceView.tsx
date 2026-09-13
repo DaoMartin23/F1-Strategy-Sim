@@ -18,8 +18,10 @@ interface Props {
 }
 
 // CLAUDE.md: "Ticks through laps at a fixed interval" - uniform per-lap
-// duration, not adaptive/variable speed for long jumps.
-const TICK_DURATION_MS = 500;
+// duration, not adaptive/variable speed for long jumps. ~10s per lap so a
+// car visibly completes one full loop of the track per tick, rather than
+// zipping around it (the user's own report after playtesting the redesign).
+const TICK_DURATION_MS = 10000;
 
 // Plays through a LapTrace queue one lap at a time, calling onFrame every
 // animation frame with the lap currently being shown and 0..1 progress
