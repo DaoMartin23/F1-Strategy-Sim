@@ -55,7 +55,7 @@ export function DebriefScreen({ state }: Props) {
   const totalDelta = loggedDecisions.reduce((sum, entry) => sum + entry.delta_seconds, 0);
 
   return (
-    <section>
+    <section className="debrief">
       <h2>Debrief</h2>
       <ul>
         <li>Starting position: P{state.starting_position}</li>

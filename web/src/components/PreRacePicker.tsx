@@ -35,7 +35,7 @@ export function PreRacePicker({ onRaceCreated }: Props) {
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)}>
+    <form className="app-shell" onSubmit={(event) => void handleSubmit(event)}>
       <h1>New Race</h1>
 
       <label>

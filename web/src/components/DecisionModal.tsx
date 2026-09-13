@@ -19,15 +19,18 @@ const EVENT_LABELS: Record<string, string> = {
 // else. No hints in v1." - plain buttons, no numeric guidance.
 export function DecisionModal({ event, onChoose, disabled }: Props) {
   return (
-    <div role="dialog" aria-modal="true">
-      <h2>{EVENT_LABELS[event.type] ?? event.type}</h2>
-      <p>Lap {event.lap}</p>
-      <div>
-        {event.options.map((option) => (
-          <button key={option} type="button" disabled={disabled} onClick={() => onChoose(option)}>
-            {option}
-          </button>
-        ))}
+    <div className="modal-backdrop">
+      <div className="modal-panel" role="dialog" aria-modal="true">
+        <h2>{EVENT_LABELS[event.type] ?? event.type}</h2>
+        <p>Lap {event.lap}</p>
+        <div className="button-row">
+          {event.options.map((option) => (
+            <button key={option} type="button" disabled={disabled} onClick={() => onChoose(option)}>
+              {option}
+            </button>
+          ))}
+        </div>
+        {disabled && <p>Applying your choice…</p>}
       </div>
     </div>
   );

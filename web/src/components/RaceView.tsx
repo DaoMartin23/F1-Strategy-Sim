@@ -114,22 +114,24 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
   const finished = state.lap >= TOTAL_LAPS && state.pending_decision === null;
 
   return (
-    <main>
+    <main className="app-shell">
       <h1>F1 Race Strategy Game</h1>
 
-      <p>
+      <p className="status-line">
         Lap {mapLap} / {TOTAL_LAPS} — <WeatherBadge wetness={lastKnownWetness} />
       </p>
 
       <TrackMap cars={mapCars} lap={mapLap} retiredIds={mapRetiredIds} animationProgress={mapAnimationProgress} />
 
-      <p>
+      <p className="status-line">
         <TyreIcon compound={player.compound} tyreAge={player.tyre_age} /> {player.car} — pit stops:{" "}
         {player.pit_count} — damage: {player.damage}
         {player.retired_lap !== null && " — DNF"}
       </p>
 
-      <GapBoard cars={state.cars} />
+      <div className="table-scroll">
+        <GapBoard cars={state.cars} />
+      </div>
 
       {finished && !animating && <DebriefScreen state={state} />}
 
@@ -142,19 +144,22 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
       )}
 
       {!finished && !animating && state.pending_decision === null && (
-        <div>
+        <div className="button-row">
           <button type="button" disabled={busy} onClick={() => void advance(null)}>
             Continue
           </button>
           <button type="button" disabled={busy} onClick={() => void advance({ push: !state.push_active })}>
             Push: {state.push_active ? "ON" : "OFF"}
           </button>
+          {busy && <span>Loading next lap(s)…</span>}
         </div>
       )}
 
-      <button type="button" onClick={onNewRace}>
-        New Race
-      </button>
+      <div className="button-row">
+        <button type="button" onClick={onNewRace}>
+          New Race
+        </button>
+      </div>
 
       {error !== null && <p role="alert">{error}</p>}
     </main>
