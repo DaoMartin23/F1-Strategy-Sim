@@ -3,6 +3,7 @@ import { stepRace } from "../api/client";
 import type { Decision, State } from "../api/types";
 import { TOTAL_LAPS } from "../carChoices";
 import { DecisionModal } from "./DecisionModal";
+import { TrackMap } from "./TrackMap";
 
 interface Props {
   state: State;
@@ -33,6 +34,9 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
   return (
     <main>
       <h1>F1 Race Strategy Game</h1>
+
+      <TrackMap />
+
       <p>
         Lap {state.lap} / {TOTAL_LAPS} — {player.car} — tyres: {player.compound} (age {player.tyre_age}) — pit
         stops: {player.pit_count} — damage: {player.damage}
