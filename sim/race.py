@@ -369,3 +369,43 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
     )
     trace = LapTrace(lap=lap_number, wetness=wetness, cars=lap_entries)
     return new_state, trace, events
+
+
+EVENT_PRIORITY: list[EventType] = [
+    EventType.DAMAGE,
+    EventType.SAFETY_CAR,
+    EventType.RAIN_START,
+    EventType.RAIN_END,
+    EventType.OVERTAKEN,
+    EventType.PIT_OPPORTUNITY,
+]
+
+
+def _pick_priority_event(events: list[Event]) -> Event:
+    for event_type in EVENT_PRIORITY:
+        for event in events:
+            if event.type is event_type:
+                return event
+    return events[0]
+
+
+def run_to_next_decision(
+    state: State, decision: Decision | None, seed: int
+) -> tuple[State, list[LapTrace], Event | None]:
+    laps: list[LapTrace] = []
+    current_decision = decision
+    while not is_finished(state):
+        state, trace, events = step(state, current_decision, seed)
+        laps.append(trace)
+        current_decision = None
+
+        if state.cars[0].retired_lap is not None:
+            # Nothing left for the player to decide - free-run to the finish.
+            continue
+
+        if events:
+            chosen = _pick_priority_event(events)
+            state = dataclasses.replace(state, pending_decision=chosen)
+            return state, laps, chosen
+
+    return state, laps, None
