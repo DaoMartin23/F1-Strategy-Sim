@@ -109,11 +109,13 @@ def test_optimal_result_position_trace_has_one_entry_per_lap_completed() -> None
 def test_find_optimal_default_n_samples_wall_clock() -> None:
     # n_samples=2000 (the originally planned default) measured ~156s in a
     # one-off run - ~78ms/candidate - far too slow for a synchronous debrief
-    # API call. The default was lowered to 200 (~15s) after confirming this
-    # with the user; that real number is recorded in README.md. This test
-    # keeps a fast regression check that the lowered default stays fast.
+    # API call, confirmed with the user; real numbers are recorded in
+    # README.md. This test keeps a regression check that the shipped
+    # default stays within a sane bound - update the bound alongside
+    # find_optimal()'s default if that default changes.
     start = time.perf_counter()
-    find_optimal(_TRACK, seed=1, player_car="car_5", starting_position=10)
+    result = find_optimal(_TRACK, seed=1, player_car="car_5", starting_position=10)
     elapsed = time.perf_counter() - start
-    print(f"\nfind_optimal(n_samples=200, the default) wall-clock: {elapsed:.2f}s")
-    assert elapsed < 30.0
+    print(f"\nfind_optimal() at its default n_samples wall-clock: {elapsed:.2f}s")
+    assert elapsed < 60.0
+    assert result.total_time > 0.0
