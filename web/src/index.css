@@ -7,6 +7,9 @@ body {
   margin: 0;
 }
 
+/* ---- Shared with the pre-race picker + debrief screen (untouched by the
+   race-dashboard redesign below) ---- */
+
 .app-shell {
   max-width: 960px;
   margin: 0 auto;
@@ -29,62 +32,409 @@ body {
   font-size: 1rem;
 }
 
-.status-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.table-scroll {
-  overflow-x: auto;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 4px 10px 4px 0;
-  white-space: nowrap;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  box-sizing: border-box;
-  z-index: 10;
-}
-
-.modal-panel {
-  background: canvas;
-  color: canvastext;
-  border-radius: 10px;
-  padding: 20px;
-  max-width: 440px;
-  width: 100%;
-  box-sizing: border-box;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-}
-
 .debrief {
   border: 1px solid color-mix(in srgb, canvastext 25%, transparent);
   border-radius: 10px;
   padding: 16px;
   margin-top: 16px;
+}
+
+/* ---- Race dashboard: dark motorsport-strategy-app look, scoped to
+   .race-dashboard so the picker/debrief above are unaffected. ---- */
+
+.race-dashboard {
+  --db-bg: #0b0e14;
+  --db-panel-bg: #12151c;
+  --db-panel-border: #232838;
+  --db-text: #e8ecf4;
+  --db-text-muted: #8a93a6;
+  --db-accent: #3b82f6;
+  --db-warning: #ffb020;
+
+  display: grid;
+  grid-template-columns: minmax(320px, 2fr) 3fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "header header" "leaderboard right";
+  min-height: 100dvh;
+  padding: 12px;
+  gap: 12px;
+  box-sizing: border-box;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: system-ui, sans-serif;
+}
+
+.race-dashboard * {
+  box-sizing: border-box;
+}
+
+.db-header {
+  grid-area: header;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+}
+
+.db-lap-counter {
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.db-weather-chip {
+  color: var(--db-text-muted);
+  font-size: 0.9rem;
+}
+
+.db-header .db-button {
+  margin-left: auto;
+}
+
+.db-panel {
+  background: var(--db-panel-bg);
+  border: 1px solid var(--db-panel-border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  min-width: 0;
+}
+
+.db-panel-title {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--db-text-muted);
+}
+
+.db-panel-headline {
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.db-muted {
+  color: var(--db-text-muted);
+}
+
+/* Leaderboard - left column, ~40% width, own internal scroll so the whole
+   page never needs to scroll to see it and the track map together. */
+
+.db-leaderboard {
+  grid-area: leaderboard;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.db-leaderboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.db-leaderboard thead {
+  position: sticky;
+  top: 0;
+}
+
+.db-leaderboard th {
+  text-align: left;
+  color: var(--db-text-muted);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  background: var(--db-panel-bg);
+  border-bottom: 1px solid var(--db-panel-border);
+}
+
+.db-leaderboard td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--db-panel-border);
+  white-space: nowrap;
+}
+
+.db-leaderboard tr.db-player-row td {
+  background: color-mix(in srgb, var(--db-accent) 20%, transparent);
+  font-weight: 700;
+  color: #fff;
+}
+
+.db-leaderboard tr.db-retired-row td {
+  color: var(--db-text-muted);
+  opacity: 0.7;
+}
+
+/* Right column: track map (large) / player+weather+rival row / event panel. */
+
+.db-right {
+  grid-area: right;
+  display: grid;
+  grid-template-rows: minmax(220px, 1.3fr) auto minmax(150px, 0.9fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.db-trackmap-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px;
+}
+
+.db-trackmap-panel svg {
+  width: 100%;
+  height: 100%;
+}
+
+.db-info-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.db-info-row .db-panel {
+  overflow: auto;
+}
+
+.db-stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+
+.db-stat-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.db-stat-list dt {
+  color: var(--db-text-muted);
+}
+
+.db-stat-list dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.db-push-on {
+  color: var(--db-warning);
+}
+
+.db-dnf-badge {
+  margin: 8px 0 0;
+  color: #ff5b5b;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.db-player-tyre-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.db-tyre-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 800;
+  color: #14161c;
+  flex: none;
+}
+
+.db-tyre-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-tyre-bar-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: #232838;
+  overflow: hidden;
+}
+
+.db-tyre-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+}
+
+.db-tyre-bar-label {
+  font-size: 0.75rem;
+  color: var(--db-text-muted);
+  white-space: nowrap;
+}
+
+.db-rival-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-rival-row {
+  font-size: 0.8rem;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--db-panel-border);
+}
+
+.db-rival-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.db-rival-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.db-rival-pos {
+  color: var(--db-text-muted);
+  font-weight: 400;
+}
+
+.db-rival-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--db-text-muted);
+}
+
+/* Event panel - a permanent fixture, subdued when idle, prominent when a
+   decision is pending. */
+
+.db-event-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.db-event-idle {
+  opacity: 0.85;
+}
+
+.db-event-active {
+  border-color: var(--db-warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--db-warning) 45%, transparent);
+}
+
+.db-event-heading {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.db-event-context {
+  margin: 6px 0 0;
+  color: var(--db-text-muted);
+}
+
+.db-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.db-button {
+  background: linear-gradient(#1a2030, #12151c);
+  border: 1px solid var(--db-panel-border);
+  color: var(--db-text);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-button:hover:not(:disabled) {
+  border-color: var(--db-accent);
+}
+
+.db-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.db-button-primary {
+  background: var(--db-accent);
+  border-color: var(--db-accent);
+  color: #fff;
+}
+
+.db-option-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.db-option-label {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.db-option-sublabel {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--db-text-muted);
+}
+
+.db-start-button {
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 12px 24px;
+  font-size: 1rem;
+}
+
+.db-error {
+  grid-column: 1 / -1;
+  color: #ff5b5b;
+  font-weight: 600;
+}
+
+/* Narrow-viewport fallback: stack instead of a fixed-height grid so nothing
+   gets clipped on a small screen (the dashboard is designed primarily for
+   desktop, per the spec, but this keeps it usable rather than broken). */
+@media (max-width: 900px) {
+  .race-dashboard {
+    grid-template-columns: 1fr;
+    grid-template-areas: "header" "leaderboard" "right";
+    height: auto;
+  }
+
+  .db-leaderboard {
+    max-height: 50vh;
+  }
+
+  .db-info-row {
+    grid-template-columns: 1fr;
+  }
 }

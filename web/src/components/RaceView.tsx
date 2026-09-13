@@ -2,12 +2,14 @@ import { useState } from "react";
 import { stepRace } from "../api/client";
 import type { Decision, LapTrace, State } from "../api/types";
 import { TOTAL_LAPS } from "../simConstants";
+import { deriveStandings } from "../standings";
 import { DebriefScreen } from "./DebriefScreen";
-import { DecisionModal } from "./DecisionModal";
-import { GapBoard } from "./GapBoard";
+import { EventPanel } from "./EventPanel";
+import { Leaderboard } from "./Leaderboard";
+import { PlayerPanel } from "./PlayerPanel";
+import { RivalPanel } from "./RivalPanel";
 import { TrackMap } from "./TrackMap";
-import { TyreIcon } from "./TyreIcon";
-import { WeatherBadge } from "./WeatherBadge";
+import { WeatherChip, WeatherPanel } from "./WeatherPanel";
 
 interface Props {
   state: State;
@@ -60,6 +62,21 @@ function retiredIdSet(cars: State["cars"]): Set<number> {
   return new Set(cars.filter((car) => car.retired_lap !== null).map((car) => car.id));
 }
 
+// Every car's lap_time from the final LapTrace of a /race/step response -
+// null if that response contained no laps (shouldn't happen in practice,
+// but response.laps is technically nullable-length).
+function lastLapTimesFrom(laps: LapTrace[]): Record<number, number> | null {
+  if (laps.length === 0) {
+    return null;
+  }
+  const finalLap = laps[laps.length - 1];
+  const result: Record<number, number> = {};
+  for (const car of finalLap.cars) {
+    result[car.id] = car.lap_time;
+  }
+  return result;
+}
+
 export function RaceView({ state, onStateChange, onNewRace }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,15 +85,20 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
   const [displayedLap, setDisplayedLap] = useState<LapTrace | null>(null);
   const [animationProgress, setAnimationProgress] = useState(0);
   const [animatingRetiredIds, setAnimatingRetiredIds] = useState<Set<number>>(new Set());
-  // The chrome (gap board, tyre icon, weather badge) intentionally updates
-  // immediately alongside `state` rather than staying in lockstep with the
-  // map's animation - only the map's car positions visually journey through
-  // the intermediate laps. Wetness specifically isn't part of State at all
+  // The chrome (leaderboard, panels) intentionally updates immediately
+  // alongside `state` rather than staying in lockstep with the map's
+  // animation - only the map's car positions visually journey through the
+  // intermediate laps. Wetness specifically isn't part of State at all
   // (never persisted, per the sim's "derive, don't store" design), so the
   // only way to know current weather client-side is to remember it from the
   // last lap of the most recent /race/step response - reset to "unknown
   // dry" on a fresh page load until the next action reports it for real.
+  // previousWetness trails one step behind, purely to derive a genuine
+  // rising/falling/steady trend for the weather panel (never a fabricated
+  // forecast).
   const [lastKnownWetness, setLastKnownWetness] = useState(0);
+  const [previousWetness, setPreviousWetness] = useState(0);
+  const [lastLapTimes, setLastLapTimes] = useState<Record<number, number>>({});
 
   async function advance(decision: Decision | null) {
     setError(null);
@@ -89,7 +111,12 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
       onStateChange(result.state);
       setAnimatingRetiredIds(retiredIdSet(result.state.cars));
       if (result.laps.length > 0) {
+        setPreviousWetness(lastKnownWetness);
         setLastKnownWetness(result.laps[result.laps.length - 1].wetness);
+        const times = lastLapTimesFrom(result.laps);
+        if (times !== null) {
+          setLastLapTimes(times);
+        }
       }
       await playLapQueue(result.laps, (lap, progress) => {
         setDisplayedLap(lap);
@@ -112,56 +139,62 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
 
   const player = state.cars[0];
   const finished = state.lap >= TOTAL_LAPS && state.pending_decision === null;
+  const standings = deriveStandings(state.cars);
+  const playerStanding = standings.find((entry) => entry.id === player.id) ?? null;
 
   return (
-    <main className="app-shell">
-      <h1>F1 Race Strategy Game</h1>
-
-      <p className="status-line">
-        Lap {mapLap} / {TOTAL_LAPS} — <WeatherBadge wetness={lastKnownWetness} />
-      </p>
-
-      <TrackMap cars={mapCars} lap={mapLap} retiredIds={mapRetiredIds} animationProgress={mapAnimationProgress} />
-
-      <p className="status-line">
-        <TyreIcon compound={player.compound} tyreAge={player.tyre_age} /> {player.car} — pit stops:{" "}
-        {player.pit_count} — damage: {player.damage}
-        {player.retired_lap !== null && " — DNF"}
-      </p>
-
-      <div className="table-scroll">
-        <GapBoard cars={state.cars} />
-      </div>
-
-      {finished && !animating && <DebriefScreen state={state} />}
-
-      {!finished && !animating && state.pending_decision !== null && (
-        <DecisionModal
-          event={state.pending_decision}
-          disabled={busy}
-          onChoose={(choice) => void advance({ choice })}
-        />
-      )}
-
-      {!finished && !animating && state.pending_decision === null && (
-        <div className="button-row">
-          <button type="button" disabled={busy} onClick={() => void advance(null)}>
-            Continue
-          </button>
-          <button type="button" disabled={busy} onClick={() => void advance({ push: !state.push_active })}>
-            Push: {state.push_active ? "ON" : "OFF"}
-          </button>
-          {busy && <span>Loading next lap(s)…</span>}
+    <div className="race-dashboard">
+      <header className="db-header">
+        <div className="db-lap-counter">
+          LAP {mapLap} / {TOTAL_LAPS}
         </div>
-      )}
-
-      <div className="button-row">
-        <button type="button" onClick={onNewRace}>
+        <WeatherChip wetness={lastKnownWetness} />
+        <button type="button" className="db-button" onClick={onNewRace}>
           New Race
         </button>
-      </div>
+      </header>
 
-      {error !== null && <p role="alert">{error}</p>}
-    </main>
+      <section className="db-leaderboard">
+        <Leaderboard cars={state.cars} lastLapTimes={lastLapTimes} />
+      </section>
+
+      <section className="db-right">
+        <div className="db-panel db-trackmap-panel">
+          <TrackMap cars={mapCars} lap={mapLap} retiredIds={mapRetiredIds} animationProgress={mapAnimationProgress} />
+        </div>
+
+        <div className="db-info-row">
+          <PlayerPanel
+            player={player}
+            position={playerStanding?.position ?? null}
+            lastLapTime={lastLapTimes[player.id] ?? null}
+            pushActive={state.push_active}
+          />
+          <WeatherPanel wetness={lastKnownWetness} previousWetness={previousWetness} />
+          <RivalPanel standings={standings} cars={state.cars} lastLapTimes={lastLapTimes} playerId={player.id} />
+        </div>
+
+        {finished && !animating ? (
+          <DebriefScreen state={state} />
+        ) : (
+          <EventPanel
+            event={state.pending_decision}
+            lap={state.lap}
+            animating={animating}
+            busy={busy}
+            playerPosition={playerStanding?.position ?? null}
+            cars={state.cars}
+            onChoose={(choice) => void advance({ choice })}
+            onStart={() => void advance(null)}
+          />
+        )}
+      </section>
+
+      {error !== null && (
+        <p role="alert" className="db-error">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
