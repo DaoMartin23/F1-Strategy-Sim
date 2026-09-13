@@ -1,8 +1,68 @@
 import { useEffect, useRef, useState } from "react";
 import { CarIcon } from "./CarIcon";
-import { computeAnimatedFractions, START_FINISH_POINT, TRACK_PATH_D, TRACK_VIEWBOX } from "../trackGeometry";
+import {
+  CORNER_MARKERS,
+  computeAnimatedFractions,
+  START_FINISH_HEADING_DEG,
+  START_FINISH_POINT,
+  TRACK_HEIGHT,
+  TRACK_PATH_D,
+  TRACK_VIEWBOX,
+  TRACK_WIDTH,
+  type TrackMarker,
+} from "../trackGeometry";
 
 const CAR_COUNT = 20;
+
+// Half the road's drawn stroke width (see the two <path> strokeWidths
+// below) - reused so the checkered line/curbs line up with the road's
+// actual edges instead of a separately-guessed number.
+const ROAD_HALF_WIDTH = 14;
+
+// A black/white checkered strip across the road at the start/finish line,
+// oriented perpendicular to the track direction there.
+function CheckeredLine({ x, y, headingDeg }: TrackMarker) {
+  const squareCount = 8;
+  const squareWidth = (ROAD_HALF_WIDTH * 2) / squareCount;
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${headingDeg})`}>
+      {Array.from({ length: squareCount }, (_, i) => (
+        <rect
+          key={i}
+          x={-ROAD_HALF_WIDTH + i * squareWidth}
+          y={-3}
+          width={squareWidth}
+          height={6}
+          fill={i % 2 === 0 ? "#111" : "#f5f5f5"}
+        />
+      ))}
+    </g>
+  );
+}
+
+// Small red/white curb detailing on both edges of the road at a corner
+// apex, oriented along the track direction there.
+function CornerCurb({ x, y, headingDeg }: TrackMarker) {
+  const stripeCount = 3;
+  const stripeLength = 4;
+  const stripes = (side: -1 | 1) =>
+    Array.from({ length: stripeCount }, (_, i) => (
+      <rect
+        key={i}
+        x={side * ROAD_HALF_WIDTH - 2}
+        y={-stripeLength * 1.5 + i * stripeLength}
+        width={4}
+        height={stripeLength}
+        fill={i % 2 === 0 ? "#c81e1e" : "#f5f5f5"}
+      />
+    ));
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${headingDeg})`}>
+      {stripes(-1)}
+      {stripes(1)}
+    </g>
+  );
+}
 
 // Evenly spaced, maximally distinguishable hues - one per grid car, keyed
 // by the car's stable id (0-19), not its position in the array.
@@ -59,10 +119,13 @@ export function TrackMap({ cars, lap, retiredIds, animationProgress }: Props) {
 
   return (
     <svg viewBox={TRACK_VIEWBOX} width="100%" role="img" aria-label="Track map">
-      <rect width="1000" height="1000" fill="#0f2a1d" />
+      <rect width={TRACK_WIDTH} height={TRACK_HEIGHT} fill="#0f2a1d" />
       <path ref={pathRef} d={TRACK_PATH_D} fill="none" stroke="#3a3a3a" strokeWidth={28} strokeLinejoin="round" />
       <path d={TRACK_PATH_D} fill="none" stroke="#6b6b6b" strokeWidth={26} strokeLinejoin="round" />
-      <circle cx={START_FINISH_POINT.x} cy={START_FINISH_POINT.y} r={5} fill="#ffd400" />
+      {CORNER_MARKERS.map((marker, i) => (
+        <CornerCurb key={i} {...marker} />
+      ))}
+      <CheckeredLine x={START_FINISH_POINT.x} y={START_FINISH_POINT.y} headingDeg={START_FINISH_HEADING_DEG} />
       {totalLength !== null &&
         pathElement !== null &&
         cars.map((car) => {

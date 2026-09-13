@@ -188,6 +188,11 @@ body {
   justify-content: center;
   min-height: 0;
   padding: 8px;
+  /* Matches TrackMap.tsx's grass rect exactly - the SVG's viewBox aspect
+     ratio (landscape) rarely matches this panel's actual box exactly, so
+     preserveAspectRatio letterboxes it; without this, the letterboxed
+     strip shows the (dark navy) panel background instead of grass. */
+  background: #0f2a1d;
 }
 
 .db-trackmap-panel svg {

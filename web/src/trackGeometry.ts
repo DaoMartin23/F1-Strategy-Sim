@@ -21,7 +21,9 @@
 
 import type { CarState } from "./api/types";
 
-export const TRACK_VIEWBOX = "0 0 1200 750";
+export const TRACK_WIDTH = 1200;
+export const TRACK_HEIGHT = 750;
+export const TRACK_VIEWBOX = `0 0 ${TRACK_WIDTH} ${TRACK_HEIGHT}`;
 
 interface Point {
   x: number;
@@ -88,6 +90,33 @@ export const TRACK_PATH_D = catmullRomToBezierPath(VERTICES);
 
 // The "start_finish" waypoint itself - vertex 0 above.
 export const START_FINISH_POINT: Point = VERTICES[0];
+
+export interface TrackMarker {
+  x: number;
+  y: number;
+  /** Degrees, in the same "0 = pointing up, clockwise-positive" convention TrackMap.tsx already uses for car headings (atan2 + 90). */
+  headingDeg: number;
+}
+
+// Heading at vertex i via the same tangent direction the Catmull-Rom fit
+// above already uses for that vertex ((p[i+1] - p[i-1]), see c1x/c1y) - so
+// markers drawn with this heading sit flush with the actual curve there,
+// not just the straight line between neighboring vertices.
+function headingAt(index: number): number {
+  const n = VERTICES.length;
+  const prev = VERTICES[(index - 1 + n) % n];
+  const next = VERTICES[(index + 1) % n];
+  return (Math.atan2(next.y - prev.y, next.x - prev.x) * 180) / Math.PI + 90;
+}
+
+export const START_FINISH_HEADING_DEG = headingAt(0);
+
+// One marker per real numbered corner (the "turnN" waypoints - excludes the
+// "*_mid*" helper points along the straights, which aren't corners) for
+// TrackMap.tsx to draw small red/white curb detailing at.
+export const CORNER_MARKERS: TrackMarker[] = NAMED_WAYPOINTS.flatMap(([name, x, y], index) =>
+  name.startsWith("turn") ? [{ x, y, headingDeg: headingAt(index) }] : [],
+);
 
 // Mirrors TRACKS["silverstone"]["base_lap_time"] in sim/model.py - used only
 // as a fallback before any lap has completed (state.lap === 0), when there's
