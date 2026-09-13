@@ -21,3 +21,5 @@ web/.vite/
 .DS_Store
 .vscode/
 .idea/
+
+claude.md
