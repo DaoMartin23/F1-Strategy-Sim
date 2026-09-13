@@ -2,6 +2,7 @@ import { useState } from "react";
 import { stepRace } from "../api/client";
 import type { Decision, LapTrace, State } from "../api/types";
 import { TOTAL_LAPS } from "../simConstants";
+import { DebriefScreen } from "./DebriefScreen";
 import { DecisionModal } from "./DecisionModal";
 import { GapBoard } from "./GapBoard";
 import { TrackMap } from "./TrackMap";
@@ -130,7 +131,7 @@ export function RaceView({ state, onStateChange, onNewRace }: Props) {
 
       <GapBoard cars={state.cars} />
 
-      {finished && !animating && <p>Race finished.</p>}
+      {finished && !animating && <DebriefScreen state={state} />}
 
       {!finished && !animating && state.pending_decision !== null && (
         <DecisionModal
