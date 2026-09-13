@@ -87,3 +87,4 @@ class State:
     pending_decision: Event | None
     decision_log: list[DecisionLogEntry]
     cars: list[CarState]
+    safety_car_ends_after_lap: int | None = None

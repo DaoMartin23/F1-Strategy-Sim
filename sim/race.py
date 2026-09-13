@@ -279,10 +279,21 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
     if player_damage_event is not None:
         events.append(player_damage_event)
 
-    safety_car_rng = make_rng(seed, lap_number, PURPOSE_SAFETY_CAR_TRIGGER)
-    safety_car_event = detect_safety_car(incident_occurred, safety_car_rng, lap_number)
-    if safety_car_event is not None:
-        events.append(safety_car_event)
+    sc_normal_fraction: float | None = None
+    new_sc_ends_after_lap = state.safety_car_ends_after_lap
+    if state.safety_car_ends_after_lap is not None and lap_number == state.safety_car_ends_after_lap:
+        # The full caution lap: everyone runs entirely at SC pace.
+        sc_normal_fraction = 0.0
+        new_sc_ends_after_lap = None
+    elif state.safety_car_ends_after_lap is None:
+        safety_car_rng = make_rng(seed, lap_number, PURPOSE_SAFETY_CAR_TRIGGER)
+        safety_car_event = detect_safety_car(incident_occurred, safety_car_rng, lap_number)
+        if safety_car_event is not None:
+            events.append(safety_car_event)
+            # Second draw off the same generator: how far through this lap
+            # normal racing happened before the SC came out.
+            sc_normal_fraction = float(safety_car_rng.random())
+            new_sc_ends_after_lap = lap_number + 1
 
     new_cars: list[CarState] = []
     paired: list[tuple[CarState, CarLap]] = []
@@ -298,8 +309,14 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
                 tyre_age=car.tyre_age,
             )
         else:
+            sc_affected = sc_normal_fraction is not None
             pushing = push_active and car.id == 0
-            extra_wear = 1 + PARAMS["push_extra_wear"] if pushing else 1
+            # Push's time benefit is left to naturally diminish via the SC
+            # blend below (zero weight on the full-caution lap, partial
+            # weight on the trigger lap's pre-SC portion); its tyre-wear
+            # side effect is explicitly skipped for any SC-affected lap -
+            # you're not really pushing hard while bunched up under caution.
+            extra_wear = 1 + PARAMS["push_extra_wear"] if (pushing and not sc_affected) else 1
             new_tyre_age = car.tyre_age + extra_wear
 
             noise_rng = make_rng(seed, lap_number, PURPOSE_NOISE, car.id)
@@ -308,6 +325,9 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
             )
             if pushing:
                 this_lap_time -= PARAMS["push_time_gain"]
+            if sc_normal_fraction is not None:
+                sc_pace = PARAMS["safety_car"]["lap_time_seconds"]
+                this_lap_time = sc_normal_fraction * this_lap_time + (1 - sc_normal_fraction) * sc_pace
 
             new_total_time = car.total_time + this_lap_time
             new_car = dataclasses.replace(car, tyre_age=new_tyre_age, total_time=new_total_time)
@@ -322,9 +342,10 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
         new_cars.append(new_car)
         paired.append((new_car, entry))
 
-    overtaken_event = detect_overtaken(state.cars, new_cars, player_pitted, lap_number)
-    if overtaken_event is not None:
-        events.append(overtaken_event)
+    if sc_normal_fraction is None:
+        overtaken_event = detect_overtaken(state.cars, new_cars, player_pitted, lap_number)
+        if overtaken_event is not None:
+            events.append(overtaken_event)
 
     if new_cars and new_cars[0].retired_lap is None:
         pitting_event = detect_pitting_opportunity(new_cars[0], new_cars[1:], state.player_strategy, lap_number)
@@ -344,6 +365,7 @@ def step(state: State, decision: Decision | None, seed: int) -> tuple[State, Lap
         cars=new_cars,
         push_active=push_active,
         pending_decision=None,
+        safety_car_ends_after_lap=new_sc_ends_after_lap,
     )
     trace = LapTrace(lap=lap_number, wetness=wetness, cars=lap_entries)
     return new_state, trace, events

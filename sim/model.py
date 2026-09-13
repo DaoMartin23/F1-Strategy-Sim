@@ -50,6 +50,7 @@ class IncidentParams(TypedDict):
 class SafetyCarParams(TypedDict):
     base_chance_per_lap: float
     incident_bonus: float
+    lap_time_seconds: float
 
 
 class ModelParams(TypedDict):
@@ -84,6 +85,7 @@ PARAMS: ModelParams = {
     "safety_car": {
         "base_chance_per_lap": 0.01,
         "incident_bonus": 0.25,
+        "lap_time_seconds": 120.0,
     },
     "pit_loss": {
         "min": 18.0,
