@@ -1,150 +1,67 @@
-// A stylized, hand-tuned closed track shape - NOT a licensed/precise trace
-// of Silverstone's real geometry (confirmed with the user as an acceptable
-// approximation). Built from a small set of hand-placed vertices at
-// strictly ascending angles around a fixed center, connected by exactly
-// straight edges (via the standard point-normal line formula expressed in
-// polar form), with each corner rounded off by blending the two adjacent
-// straight-edge formulas over a small angular window. Because every vertex
-// angle is strictly ascending by construction, the result is guaranteed
-// star-shaped/non-self-intersecting - the same guarantee the original
-// sine-sum curve relied on, just built from straight edges instead of
-// smooth waves so it actually reads as straights + corners rather than a
-// wobbly blob (an earlier, freehand-Cartesian-vertex version of this same
-// approach briefly reintroduced self-intersection risk: hand-placing
-// vertices by eye doesn't guarantee their angle-from-center comes out
-// ascending, which a chicane-like detour violated - fixed by defining
-// vertices directly as (angle, radius) pairs instead).
+// A stylized, hand-tuned closed track shape tracing Silverstone's real
+// corner-by-corner layout (per a reference circuit diagram: 18 numbered
+// corners, sector boundaries, DRS zones) - not licensed/precise geometry,
+// but every corner below corresponds to the matching numbered corner in
+// that diagram, in order, rather than an abstract "evokes a track" shape.
 //
-// One long back straight opposite a tighter, more technical infield corner
-// sequence evokes Silverstone's real silhouette without tracing its actual
-// corner-by-corner layout.
+// This is built from an ordered waypoint list run through a Catmull-Rom
+// spline (below), NOT the single-valued-polar-function technique used
+// earlier in the project. That technique (every angle from a fixed center
+// maps to exactly one point) guarantees non-self-intersection by
+// construction, but cannot represent this track at all: turns 6/7/8 form a
+// tight hook where the path curls back on itself, and checking each
+// point's angle from any plausible center shows it genuinely reversing
+// direction across that hook - a hard topological mismatch, not a tuning
+// problem. So this shape instead uses plain ordered waypoints (closer to
+// the project's very first track-shape attempts) plus an explicit
+// automated check (see the redesign commit message) that no two
+// non-adjacent sampled segments of the finished path cross, run before
+// this shape was accepted - since there's no more guarantee-by-construction
+// to rely on.
 
 import type { CarState } from "./api/types";
 
-export const TRACK_VIEWBOX = "0 0 1000 1000";
+export const TRACK_VIEWBOX = "0 0 1200 750";
 
 interface Point {
   x: number;
   y: number;
 }
 
-const CENTER: Point = { x: 500, y: 480 };
-const SAMPLE_COUNT = 300;
-
-// (angle in degrees, radius) pairs, strictly ascending angle. Every
-// consecutive pair becomes an exactly straight edge; a long gap between two
-// vertices' angles reads as a long straight (e.g. 5->6, the back straight),
-// while several close-together vertices with tight radii read as a
-// technical corner sequence (2/3/4, the infield hairpin).
-const VERTEX_POLAR: [angleDeg: number, radius: number][] = [
-  [0, 290], // 0: start/finish
-  [35, 310], // 1: end of the pit straight, into turn 1's braking zone
-  [72, 175], // 2: tightening right-hander
-  [108, 130], // 3: tight hairpin-like bottom of the infield
-  [145, 220], // 4: opening back up
-  [183, 350], // 5: start of the long back straight (far side)
-  [232, 385], // 6: end of the long back straight
-  [266, 235], // 7: fast sweeping corner complex begins
-  [298, 185], // 8: esses continue, tightening
-  [333, 245], // 9: final corner back onto the pit straight
+// Hand-placed waypoints digitized from the reference circuit diagram, in
+// corner order (18 -> 17 -> ... -> 1 -> back to the start/finish near 18).
+// "mid*"/"*_straight_mid" entries aren't real corners - they're extra
+// collinear-ish points along the long straights so the Catmull-Rom fit
+// doesn't bow them into a curve (a straight edge needs more than two points
+// to stay straight under spline interpolation). Verified via a throwaway
+// Python prototype rendered to PNG and compared against the reference image
+// before porting here - see the redesign commit message.
+const NAMED_WAYPOINTS: [name: string, x: number, y: number][] = [
+  ["start_finish", 559.4, 162.5],
+  ["turn18", 468.8, 115.6],
+  ["turn17", 359.4, 181.3],
+  ["turn16", 375.0, 221.9],
+  ["turn15", 209.4, 387.5],
+  ["back_straight_mid1", 318.8, 462.5],
+  ["back_straight_mid2", 443.8, 546.9],
+  ["turn14", 593.8, 625.0],
+  ["turn13", 665.6, 693.8],
+  ["turn12", 737.5, 665.6],
+  ["turn11", 812.5, 681.3],
+  ["turn10", 853.1, 609.4],
+  ["sector2_straight_mid", 1006.3, 587.5],
+  ["turn9", 1159.4, 565.6],
+  ["turn8", 1116.3, 261.9],
+  ["turn7", 887.5, 200.0],
+  ["turn6", 1003.8, 313.1],
+  ["turn5", 778.1, 562.5],
+  ["turn4", 665.6, 562.5],
+  ["turn3", 734.4, 490.6],
+  ["turn2", 653.1, 415.6],
+  ["turn1", 703.1, 300.0],
 ];
 
-// Corner-rounding half-width in radians, index-aligned with VERTEX_POLAR -
-// wider blends read as sweeping/gentle corners, narrower ones as
-// tighter/sharper turns. Tuned per-vertex alongside the radii above (via
-// visual iteration - see the redesign's commit message) rather than one
-// constant, since a wide blend on a very sharp turn (e.g. vertex 6, an ~86
-// degree direction change) visually pinches the road to a point.
-const CORNER_BLEND: number[] = [0.12, 0.07, 0.07, 0.05, 0.08, 0.09, 0.05, 0.1, 0.08, 0.12];
-
-const VERTICES: Point[] = VERTEX_POLAR.map(([angleDeg, r]) => {
-  const theta = (angleDeg * Math.PI) / 180;
-  return { x: CENTER.x + r * Math.cos(theta), y: CENTER.y + r * Math.sin(theta) };
-});
-
-const VERTEX_ANGLES: number[] = VERTICES.map((v) => Math.atan2(v.y - CENTER.y, v.x - CENTER.x));
-
-interface LineParams {
-  /** Unit normal (nx, ny) and perpendicular distance d from CENTER, satisfying nx*x + ny*y = d for every point (x, y) on the line, oriented so d >= 0. */
-  nx: number;
-  ny: number;
-  d: number;
-}
-
-// The straight line through two vertices, expressed relative to CENTER so
-// that r(theta) = d / (nx*cos(theta) + ny*sin(theta)) reconstructs it.
-function lineThrough(a: Point, b: Point): LineParams {
-  const ax = a.x - CENTER.x;
-  const ay = a.y - CENTER.y;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const length = Math.hypot(dx, dy);
-  let nx = -dy / length;
-  let ny = dx / length;
-  let d = nx * ax + ny * ay;
-  if (d < 0) {
-    nx = -nx;
-    ny = -ny;
-    d = -d;
-  }
-  return { nx, ny, d };
-}
-
-const SEGMENTS: LineParams[] = VERTICES.map((v, i) => lineThrough(v, VERTICES[(i + 1) % VERTICES.length]));
-
-function segmentRadius(seg: LineParams, theta: number): number {
-  return seg.d / (seg.nx * Math.cos(theta) + seg.ny * Math.sin(theta));
-}
-
-// Wraps b - a into (-pi, pi].
-function angleDiff(a: number, b: number): number {
-  return ((b - a + Math.PI) % (2 * Math.PI)) - Math.PI;
-}
-
-function radiusAt(theta: number): number {
-  const wrapped = ((theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  const n = VERTICES.length;
-  for (let i = 0; i < n; i++) {
-    const a0 = VERTEX_ANGLES[i];
-    const a1 = VERTEX_ANGLES[(i + 1) % n];
-    const span = ((angleDiff(a0, a1) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
-    const pos = ((angleDiff(a0, wrapped) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    if (pos > span) {
-      continue;
-    }
-
-    let r = segmentRadius(SEGMENTS[i], wrapped);
-    const distFromStart = pos;
-    const distFromEnd = span - pos;
-    const blendStart = CORNER_BLEND[i];
-    const blendEnd = CORNER_BLEND[(i + 1) % n];
-
-    if (distFromStart < blendStart) {
-      const rPrev = segmentRadius(SEGMENTS[(i - 1 + n) % n], wrapped);
-      const t = 0.5 - 0.5 * Math.cos(Math.PI * (distFromStart / blendStart));
-      r = rPrev * (1 - t) + r * t;
-    } else if (distFromEnd < blendEnd) {
-      const rNext = segmentRadius(SEGMENTS[(i + 1) % n], wrapped);
-      const t = 0.5 - 0.5 * Math.cos(Math.PI * (distFromEnd / blendEnd));
-      r = r * t + rNext * (1 - t);
-    }
-    return r;
-  }
-  throw new Error(`radiusAt: theta ${theta} not covered by any track segment`);
-}
-
-function samplePoints(): Point[] {
-  const points: Point[] = [];
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
-    const theta = (2 * Math.PI * i) / SAMPLE_COUNT;
-    const r = radiusAt(theta);
-    points.push({
-      x: CENTER.x + r * Math.cos(theta),
-      y: CENTER.y + r * Math.sin(theta),
-    });
-  }
-  return points;
-}
+const VERTICES: Point[] = NAMED_WAYPOINTS.map(([, x, y]) => ({ x, y }));
 
 function catmullRomToBezierPath(points: Point[]): string {
   const n = points.length;
@@ -167,13 +84,10 @@ function catmullRomToBezierPath(points: Point[]): string {
   return parts.join(" ");
 }
 
-const TRACK_POINTS = samplePoints();
+export const TRACK_PATH_D = catmullRomToBezierPath(VERTICES);
 
-export const TRACK_PATH_D = catmullRomToBezierPath(TRACK_POINTS);
-
-// theta=0 sample (before the start/finish kick-out bump) - a reasonable
-// start/finish marker position on the straighter edge.
-export const START_FINISH_POINT: Point = TRACK_POINTS[0];
+// The "start_finish" waypoint itself - vertex 0 above.
+export const START_FINISH_POINT: Point = VERTICES[0];
 
 // Mirrors TRACKS["silverstone"]["base_lap_time"] in sim/model.py - used only
 // as a fallback before any lap has completed (state.lap === 0), when there's
